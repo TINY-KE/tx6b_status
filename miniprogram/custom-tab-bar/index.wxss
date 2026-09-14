@@ -1,0 +1,42 @@
+/* 颜色写死，不用 app.wxss 里的 CSS 变量：
+   自定义 tabBar 渲染在页面之外的独立层，页面上的 `page { --brand: ... }` 不保证级联到这里。 */
+
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  height: 104rpx;
+  background: #ffffff;
+  border-top: 1rpx solid rgba(0, 0, 0, 0.08);
+  /* 全面屏底部横条区域。不支持 env() 的机型该值为 0，不影响布局 */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.tab-icon {
+  width: 44rpx;
+  height: 44rpx;
+  margin-bottom: 6rpx;
+}
+
+.tab-text {
+  font-size: 24rpx;
+  line-height: 1.2;
+  color: #8a8a8e;
+}
+
+.tab-item.on .tab-text {
+  color: #185fa5;
+  font-weight: 600;
+}

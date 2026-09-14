@@ -1,0 +1,86 @@
+<view class="page">
+
+  <view class="tabs">
+    <view class="tab {{tab === 'list' ? 'on' : ''}}" data-tab="list" bindtap="onTabChange">名册（{{list.length}}）</view>
+    <view class="tab {{tab === 'import' ? 'on' : ''}}" data-tab="import" bindtap="onTabChange">批量导入</view>
+  </view>
+
+  <block wx:if="{{tab === 'list'}}">
+
+    <view class="card">
+      <view class="sec-title">添加人员</view>
+      <view class="add-row">
+        <input class="add-input" placeholder="姓名" value="{{newName}}" bindinput="onNewName" maxlength="20" />
+        <picker mode="selector" range="{{deptOptions}}" value="{{newDeptIndex}}" bindchange="onNewDept">
+          <view class="add-pick">{{newDeptText}}</view>
+        </picker>
+        <view class="add-btn" bindtap="addOne">添加</view>
+      </view>
+      <view class="hint-text">电话由各人在认领身份时自己填写，这里只需要姓名和科室。</view>
+    </view>
+
+    <view class="card">
+      <input class="search-input" placeholder="搜索姓名" value="{{keyword}}" bindinput="onKeyword" />
+
+      <scroll-view class="dept-bar" scroll-x enable-flex show-scrollbar="{{false}}">
+        <view
+          class="dept-chip {{item.value === deptFilter ? 'on' : ''}}"
+          wx:for="{{deptTabs}}"
+          wx:key="value"
+          data-dept="{{item.value}}"
+          bindtap="onDeptFilter"
+        >{{item.label}}</view>
+      </scroll-view>
+
+      <view class="p-item" wx:for="{{filtered}}" wx:key="_id">
+        <view class="pi-main">
+          <text class="pi-name">{{item.name}}</text>
+          <text class="pi-dept">{{item.dept}}</text>
+          <text class="pi-phone" wx:if="{{item.phone}}">{{item.phone}}</text>
+          <text class="pi-state {{item.stateClass}}">{{item.stateText}}</text>
+          <text class="pi-admin" wx:if="{{item.isAdmin}}">管理员</text>
+        </view>
+        <view class="pi-actions">
+          <text
+            class="pi-act"
+            wx:if="{{item.claimed}}"
+            data-id="{{item._id}}"
+            data-name="{{item.name}}"
+            data-admin="{{item.isAdmin}}"
+            bindtap="toggleAdmin"
+          >{{item.adminActionText}}</text>
+          <text class="pi-del" data-id="{{item._id}}" data-name="{{item.name}}" bindtap="removeOne">移除</text>
+        </view>
+      </view>
+
+      <view class="empty" wx:if="{{filtered.length === 0}}">没有匹配的人员</view>
+    </view>
+
+  </block>
+
+  <block wx:else>
+
+    <view class="card">
+      <view class="sec-title">粘贴部门名册</view>
+      <view class="hint-text">每行一个人，姓名和科室用逗号或空格分开，可以直接从 Excel 复制两列粘贴进来。</view>
+      <view class="hint-text">示例：张三,1室（电话由各人认领后自己填，这里不用写）</view>
+      <textarea
+        class="roster-input"
+        placeholder="张三,1室"
+        value="{{rosterText}}"
+        maxlength="-1"
+        bindinput="onRosterInput"
+      />
+      <view class="preview" wx:if="{{previewText}}">{{previewText}}</view>
+      <view class="btn-primary import-btn" bindtap="doImport">导入</view>
+    </view>
+
+    <view class="card">
+      <view class="sec-title">清空重来</view>
+      <view class="hint-text">导入出错时可以清空重来，只会删掉还没人认领的记录，已认领的人不受影响。</view>
+      <view class="danger-btn" bindtap="clearUnclaimed">清空未认领名册</view>
+    </view>
+
+  </block>
+
+</view>

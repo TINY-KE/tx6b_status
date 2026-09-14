@@ -1,0 +1,396 @@
+/* height:100vh 是整屏高度，自绘 tabBar 是浮在上面的独立层，
+   所以要自己留出底部的 104rpx，否则最后几行人员会被 tabBar 盖住。
+   第二行带 env() 适配全面屏；不支持时自动退回第一行。 */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding-bottom: 104rpx;
+  padding-bottom: calc(104rpx + env(safe-area-inset-bottom));
+  background: #f5f5f7;
+}
+
+/* ---------- 顶部 ---------- */
+
+.join-tip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 24rpx;
+  background: #faeeda;
+  flex: none;
+}
+
+.join-tip-text {
+  font-size: 26rpx;
+  color: #854f0b;
+  flex: 1;
+}
+
+.join-tip-btn {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: #185fa5;
+  padding-left: 16rpx;
+}
+
+.header {
+  background: #ffffff;
+  flex: none;
+  padding-top: 16rpx;
+  border-bottom: 1rpx solid rgba(0, 0, 0, 0.06);
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24rpx 12rpx;
+}
+
+.date-title {
+  font-size: 36rpx;
+  font-weight: 500;
+}
+
+.me-name {
+  font-size: 28rpx;
+  color: #6b6b70;
+}
+
+.dept-bar {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 24rpx 18rpx;
+  white-space: nowrap;
+}
+
+.dept-chip {
+  flex: none;
+  padding: 14rpx 28rpx;
+  margin-right: 18rpx;
+  border-radius: 100rpx;
+  font-size: 28rpx;
+  color: #6b6b70;
+  background: #f1efe8;
+}
+
+.dept-chip.on {
+  background: #185fa5;
+  color: #ffffff;
+}
+
+.screen-tabs {
+  display: flex;
+  padding: 10rpx 24rpx 0;
+  gap: 36rpx;
+}
+
+.screen-tab { 
+  font-size: 38rpx;
+  color: #9a9aa0;
+  padding-bottom: 14rpx;
+  border-bottom: 4rpx solid transparent;
+}
+
+.screen-tab.on {
+  color: #185fa5;
+  font-weight: 500;
+  border-bottom-color: #185fa5;
+}
+
+.stats {
+  display: flex;
+  padding: 12rpx 24rpx 16rpx;
+}
+
+.stat {
+  flex: 1;
+  text-align: center;
+}
+
+.stat-num {
+  display: block;
+  font-size: 38rpx;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.stat-label {
+  font-size: 24rpx;
+  color: #9a9aa0;
+}
+
+/* 状态配色（本页共 4 组，改一处必须四组一起改）：在岗=绿 · 京内=黄 · 京外=红 · 请假=灰
+   1) .st-*   顶部统计数字
+   2) .d-*    时间轴点阵 / 图例
+   3) .tag-*  人员行下方的状态标签
+   4) .bar-*  近三个工作日的色条
+   京内是双色调：点/条用亮黄 #ffc107（小尺寸下才看得出是黄色），
+   数字用金 #c08a00（亮黄当文字压白底只有 1.6:1 读不了，这是能读的最亮的黄）。 */
+
+.st-office {
+  color: #2f8f5b;
+}
+
+.st-meeting {
+  color: #c08a00;
+}
+
+.st-trip {
+  color: #c0392b;
+}
+
+.st-leave {
+  color: #6f6e68;
+}
+
+/* ---------- 主体 ---------- */
+
+.swiper {
+  flex: 1;
+  height: 0;
+}
+
+.scroll {
+  height: 100%;
+  background: #ffffff;
+}
+
+.axis-row {
+  display: flex;
+  align-items: flex-end;
+  padding: 16rpx 24rpx 8rpx;
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  z-index: 2;
+}
+
+/* 姓名列：字号放大后 3 个汉字约需 84rpx，留出余量 */
+.name-col {
+  width: 112rpx;
+  flex: none;
+}
+
+.axis {
+  position: relative;
+  flex: 1;
+  height: 34rpx;
+}
+
+.axis-label {
+  position: absolute;
+  font-size: 24rpx;
+  color: #9a9aa0;
+}
+
+.axis-start {
+  transform: translateX(0);
+}
+
+.axis-center {
+  transform: translateX(-50%);
+}
+
+.axis-end {
+  transform: translateX(-100%);
+}
+
+/* ---------- 人员行 ---------- */
+
+.prow {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 24rpx;
+  border-bottom: 1rpx solid rgba(0, 0, 0, 0.05);
+}
+
+.pname {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.right-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.dots {
+  display: flex;
+  width: 100%;
+}
+
+.dot-cell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+}
+
+.d-office {
+  background: #2f8f5b;
+}
+
+.d-meeting {
+  background: #ffc107;
+}
+
+.d-trip {
+  background: #c0392b;
+}
+
+.d-leave {
+  background: #6f6e68;
+}
+
+.d-blank {
+  background: transparent;
+}
+
+.tag {
+  display: inline-block;
+  margin-top: 8rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  font-size: 24rpx;
+  white-space: nowrap;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.tag-office {
+  background: #e6f4ec;
+  color: #185e3c;
+}
+
+.tag-meeting {
+  background: #fef3c7;
+  color: #7a5a08;
+}
+
+.tag-trip {
+  background: #fbe9e7;
+  color: #8d2119;
+}
+
+.tag-leave {
+  background: #f1efe8;
+  color: #444441;
+}
+
+.tag-blank {
+  background: #f1efe8;
+  color: #b4b2a9;
+}
+
+/* ---------- 近三日 ---------- */
+
+.recent-head {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 24rpx 8rpx;
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  z-index: 2;
+}
+
+.recent-cols {
+  flex: 1;
+  display: flex;
+  gap: 12rpx;
+}
+
+.recent-col {
+  flex: 1;
+  font-size: 24rpx;
+  color: #9a9aa0;
+  text-align: center;
+}
+
+/* 今天那一列加深：列头从今天开始往右排，标出来才不会看错列 */
+.recent-col.on {
+  color: #185fa5;
+  font-weight: 500;
+}
+
+.bar {
+  flex: 1;
+  display: flex;
+  /* 条内会按时间分段着色，稍高一点才看得出分界 */
+  height: 22rpx;
+  border-radius: 4rpx;
+  overflow: hidden;
+  background: #f5f5f7;
+}
+
+.bar-seg {
+  display: block;
+  height: 100%;
+  /* 相邻两段颜色不同时留一道极细的白缝，分界更干净 */
+  box-shadow: inset -1rpx 0 0 rgba(255, 255, 255, 0.85);
+}
+
+.bar-seg:last-child {
+  box-shadow: none;
+}
+
+.bar-office {
+  background: #2f8f5b;
+}
+
+.bar-meeting {
+  background: #ffc107;
+}
+
+.bar-trip {
+  background: #c0392b;
+}
+
+.bar-leave {
+  background: #6f6e68;
+}
+
+.bar-blank {
+  background: #f1efe8;
+}
+
+/* ---------- 其他 ---------- */
+
+.list-foot {
+  text-align: center;
+  font-size: 26rpx;
+  color: #9a9aa0;
+  padding: 24rpx 0;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20rpx;
+  padding: 24rpx 24rpx 40rpx;
+}
+
+.lg-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 24rpx;
+  color: #6b6b70;
+}
+
+.legend-text {
+  padding: 24rpx;
+  font-size: 24rpx;
+  color: #9a9aa0;
+  line-height: 1.6;
+}

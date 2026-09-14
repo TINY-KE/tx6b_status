@@ -1,0 +1,134 @@
+<view class="page">
+
+  <view class="profile" wx:if="{{joined}}">
+    <view class="avatar">{{initial}}</view>
+    <view class="pinfo">
+      <view class="pname-row">
+        <text class="pname">{{me.name}}</text>
+        <text class="badge" wx:if="{{isAdmin}}">管理员</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{joined && !editing}}">
+    <view class="cell" bindtap="startEdit">
+      <text class="cell-title">编辑我的资料</text>
+      <text class="arrow">›</text>
+    </view>
+    <view class="cell" wx:if="{{isAdmin}}" bindtap="goManage">
+      <text class="cell-title">名册管理</text>
+      <text class="cell-note">导入 / 增删部门人员</text>
+      <text class="arrow">›</text>
+    </view>
+    <view class="cell" bindtap="goBoard">
+      <text class="cell-title">查看在位看板</text>
+      <text class="arrow">›</text>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{editing}}">
+    <view class="sec-title">编辑我的资料</view>
+    <view class="field">
+      <text class="field-label">姓名</text>
+      <input class="field-input" value="{{editName}}" maxlength="20" bindinput="onEditName" />
+    </view>
+    <view class="field">
+      <text class="field-label">科室</text>
+      <picker class="field-picker" mode="selector" range="{{deptOptions}}" value="{{deptIndex}}" bindchange="onDeptChange">
+        <view class="field-input field-pick">{{editDept}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <text class="field-label">电话</text>
+      <input
+        class="field-input"
+        type="number"
+        placeholder="选填，便于同事联系"
+        value="{{editPhone}}"
+        maxlength="20"
+        bindinput="onEditPhone"
+      />
+    </view>
+    <view class="btn-primary" bindtap="saveEdit">保存</view>
+    <view class="btn-plain cancel-btn" bindtap="cancelEdit">取消</view>
+  </view>
+
+  <view class="claim-card" wx:if="{{setupMode}}">
+    <text class="claim-title">创建第一个身份</text>
+    <text class="claim-desc">部门名册还是空的。你是第一个使用的人，先建立自己的身份并自动成为管理员，之后就能把整个部门的名册导入进来。</text>
+
+    <view class="field">
+      <text class="field-label">姓名</text>
+      <input class="field-input" placeholder="请输入你的姓名" value="{{setupName}}" maxlength="20" bindinput="onSetupName" />
+    </view>
+    <view class="field">
+      <text class="field-label">科室</text>
+      <picker class="field-picker" mode="selector" range="{{deptOptions}}" value="{{setupDeptIndex}}" bindchange="onSetupDept">
+        <view class="field-input field-pick">{{setupDeptText}}</view>
+      </picker>
+    </view>
+    <view class="field">
+      <text class="field-label">电话</text>
+      <input
+        class="field-input"
+        type="number"
+        placeholder="选填，便于同事联系"
+        value="{{setupPhone}}"
+        maxlength="20"
+        bindinput="onSetupPhone"
+      />
+    </view>
+
+    <view class="btn-primary setup-btn" bindtap="bootstrapIdentity">创建并成为管理员</view>
+  </view>
+
+  <view class="claim-card" wx:if="{{claimMode && !setupMode}}">
+    <view class="claim-head">
+      <text class="claim-title">认领你的身份</text>
+      <text class="claim-cancel" wx:if="{{joined}}" bindtap="cancelClaim">取消</text>
+    </view>
+    <text class="claim-desc">从部门名册里找到你自己的名字，点一下就能认领</text>
+
+    <input
+      class="search-input"
+      placeholder="输入姓名或科室搜索"
+      value="{{keyword}}"
+      bindinput="onKeywordInput"
+    />
+
+    <view class="claim-phone">
+      <text class="claim-phone-label">电话</text>
+      <input
+        class="claim-phone-input"
+        type="number"
+        placeholder="选填，便于同事在外出时联系你"
+        value="{{claimPhone}}"
+        maxlength="20"
+        bindinput="onClaimPhone"
+      />
+    </view>
+
+    <view class="claim-list">
+      <view
+        class="claim-item"
+        wx:for="{{claimList}}"
+        wx:key="_id"
+        data-id="{{item._id}}"
+        data-name="{{item.name}}"
+        data-dept="{{item.dept}}"
+        bindtap="doClaim"
+      >
+        <text class="ci-name">{{item.name}}</text>
+        <text class="ci-dept">{{item.dept}}</text>
+      </view>
+    </view>
+
+    <view class="empty" wx:if="{{claimLoading}}">加载中…</view>
+    <view class="empty" wx:if="{{claimEmpty && !claimLoading}}">{{emptyText}}</view>
+  </view>
+
+  <view class="foot-tip" wx:if="{{!joined && !claimMode && !setupMode}}">
+    <text>你还未认领身份</text>
+  </view>
+
+</view>

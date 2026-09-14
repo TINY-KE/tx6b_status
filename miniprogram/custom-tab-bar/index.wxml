@@ -1,0 +1,18 @@
+<!-- 自绘 tabBar：原生 tabBar 的文字大小无法用 WXSS 修改，
+     底部这一行用 icon + 文字自绘，选中态靠图标颜色 + 文字颜色区分。 -->
+<view class="tabbar">
+  <view
+    class="tab-item {{selected === index ? 'on' : ''}}"
+    wx:for="{{list}}"
+    wx:key="index"
+    data-index="{{index}}"
+    bindtap="onTap"
+  >
+    <image
+      class="tab-icon"
+      src="{{selected === index ? item.activeIcon : item.icon}}"
+      mode="aspectFit"
+    />
+    <text class="tab-text">{{item.text}}</text>
+  </view>
+</view>

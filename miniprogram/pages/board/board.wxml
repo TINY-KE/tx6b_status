@@ -1,0 +1,138 @@
+<view class="page">
+
+  <view class="join-tip" wx:if="{{!joined}}" bindtap="goMine">
+    <text class="join-tip-text">你还未认领身份，看板中不会出现你的名字</text>
+    <text class="join-tip-btn">去认领</text>
+  </view>
+
+  <view class="header">
+    <view class="title-row">
+      <text class="date-title">{{dateTitle}}</text>
+      <text class="me-name" wx:if="{{joined}}">{{meName}}</text>
+    </view>
+
+    <scroll-view class="dept-bar" scroll-x enable-flex show-scrollbar="{{false}}">
+      <view
+        class="dept-chip {{item.active}}"
+        wx:for="{{deptTabs}}"
+        wx:key="value"
+        data-dept="{{item.value}}"
+        bindtap="onDeptChange"
+      >{{item.label}}</view>
+    </scroll-view>
+
+    <view class="screen-tabs">
+      <view class="screen-tab {{screenIndex === 0 ? 'on' : ''}}" data-i="0" bindtap="onScreenTap">今天</view>
+      <view class="screen-tab {{screenIndex === 1 ? 'on' : ''}}" data-i="1" bindtap="onScreenTap">未来3个工作日</view>
+    </view>
+
+    <view class="stats" wx:if="{{stats}}">
+      <view class="stat">
+        <text class="stat-num st-office">{{stats.office}}</text>
+        <text class="stat-label">在岗</text>
+      </view>
+      <view class="stat">
+        <text class="stat-num st-meeting">{{stats.meeting}}</text>
+        <text class="stat-label">京内出差</text>
+      </view>
+      <view class="stat">
+        <text class="stat-num st-trip">{{stats.trip}}</text>
+        <text class="stat-label">京外出差</text>
+      </view>
+      <view class="stat">
+        <text class="stat-num st-leave">{{stats.leave}}</text>
+        <text class="stat-label">请假</text>
+      </view>
+    </view>
+  </view>
+
+  <swiper class="swiper" current="{{screenIndex}}" bindchange="onSwiperChange" duration="{{200}}">
+
+    <swiper-item class="sw-item">
+      <scroll-view class="scroll" scroll-y bindscrolltolower="onScrollLower">
+
+        <view class="axis-row">
+          <view class="name-col"></view>
+          <view class="axis">
+            <text
+              class="axis-label axis-{{item.align}}"
+              wx:for="{{axis}}"
+              wx:key="text"
+              style="left:{{item.left}}%"
+            >{{item.text}}</text>
+          </view>
+        </view>
+
+        <view class="prow" wx:for="{{todayPeople}}" wx:key="key">
+          <view class="name-col">
+            <text class="pname">{{item.name}}</text>
+          </view>
+          <view class="right-col">
+            <view class="dots">
+              <view class="dot-cell" wx:for="{{item.dotClasses}}" wx:for-item="dc" wx:key="index">
+                <view class="dot {{dc}}"></view>
+              </view>
+            </view>
+            <view class="tag {{item.tagClass}}" wx:if="{{item.showTag}}" style="width: 247rpx; display: inline-block; box-sizing: border-box">{{item.tagLine}}</view>
+          </view>
+        </view>
+
+        <view class="list-foot" wx:if="{{hasMore}}">继续下滑加载更多</view>
+        <view class="empty" wx:if="{{errorMsg}}">{{errorMsg}}</view>
+        <view class="empty" wx:if="{{!loading && !errorMsg && todayPeople.length === 0}}">该科室暂无人员</view>
+
+        <view class="legend">
+          <view class="lg-item"><view class="dot d-office"></view><text>在岗</text></view>
+          <view class="lg-item"><view class="dot d-meeting"></view><text>京内出差</text></view>
+          <view class="lg-item"><view class="dot d-trip"></view><text>京外出差</text></view>
+          <view class="lg-item"><view class="dot d-leave"></view><text>请假</text></view>
+        </view>
+
+      </scroll-view>
+    </swiper-item>
+
+    <swiper-item class="sw-item">
+      <scroll-view class="scroll" scroll-y>
+
+        <view class="recent-head">
+          <view class="name-col"></view>
+          <view class="recent-cols">
+            <text class="recent-col {{item.today}}" wx:for="{{recentCols}}" wx:key="date">{{item.text}}</text>
+          </view>
+        </view>
+
+        <view class="prow prow-recent" wx:for="{{recentPeople}}" wx:key="key">
+          <view class="name-col">
+            <text class="pname">{{item.name}}</text>
+          </view>
+          <view class="recent-cols">
+            <view class="bar" wx:for="{{item.days}}" wx:for-item="day" wx:key="index">
+              <view
+                class="bar-seg {{b.barClass}}"
+                wx:for="{{day.bars}}"
+                wx:for-item="b"
+                wx:key="index"
+                style="flex:{{b.flex}}"
+              ></view>
+            </view>
+          </view>
+        </view>
+
+        
+
+        <view class="empty" wx:if="{{recentLoaded && recentPeople.length === 0}}">该科室暂无人员</view>
+        <view class="empty" wx:if="{{!recentLoaded}}">加载中…</view>
+        <view class="legend">
+          <view class="lg-item"><view class="dot d-office"></view><text>在岗</text></view>
+          <view class="lg-item"><view class="dot d-meeting"></view><text>京内出差</text></view>
+          <view class="lg-item"><view class="dot d-trip"></view><text>京外出差</text></view>
+          <view class="lg-item"><view class="dot d-leave"></view><text>请假</text></view>
+          <view class="legend-text">每格为一天 8:30-18:00 的状态分布：同一天内按时间分段着色，色块宽度即该段时间占比（8:30 在左、18:00 在右）</view>
+        </view>
+
+      </scroll-view>
+    </swiper-item>
+
+  </swiper>
+
+</view>

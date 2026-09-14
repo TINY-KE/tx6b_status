@@ -1,0 +1,9 @@
+{
+  "name": "presence",
+  "version": "1.0.0",
+  "description": "去向记录的查询与写入",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

@@ -1,0 +1,382 @@
+/* 底部留出 104rpx 给自绘 tabBar，否则最后一块内容会被压在 tabBar 下面 */
+.page {
+  padding: 24rpx;
+  padding-bottom: 128rpx;
+  padding-bottom: calc(128rpx + env(safe-area-inset-bottom));
+}
+
+/* 本页比其它页字号收一档：填写项多（去向 / 日期 / 时刻 / 快捷 / 备注 / 记录），
+   字号小一点更好扫，也不至于一行挤不下。覆盖 app.wxss 里的同名全局类。 */
+.sec-title {
+  font-size: 30rpx;
+}
+
+.btn-primary {
+  font-size: 30rpx;
+}
+
+/* ---------- 未认领 ---------- */
+
+.join-card {
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 48rpx 32rpx;
+  text-align: center;
+}
+
+.join-title {
+  display: block;
+  font-size: 34rpx;
+  font-weight: 500;
+  margin-bottom: 16rpx;
+}
+
+.join-desc {
+  display: block;
+  font-size: 24rpx;
+  color: #6b6b70;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+/* ---------- 去向 ---------- */
+
+/* 可填的去向只剩三种（在办公室是默认状态，不在这里选），排一行三个 */
+.type-grid {
+  display: flex;
+  gap: 12rpx;
+}
+
+.type-btn {
+  flex: 1;
+  min-width: 0;
+  height: 96rpx;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 500;
+}
+
+/* 去向按钮：未选中=浅底深字，选中=实心。
+   配色与看板一致（在岗=绿 · 京内=黄 · 京外=红 · 请假=灰），改色要连 board.wxss 一起改。
+   京内选中态是「亮黄底 + 深褐字」，不用白字——白字压亮黄读不清。 */
+.type-meeting {
+  background: #fef3c7;
+  color: #7a5a08;
+}
+
+.type-meeting.on {
+  background: #ffc107;
+  color: #4a3600;
+}
+
+.type-trip {
+  background: #fbe9e7;
+  color: #8d2119;
+}
+
+.type-trip.on {
+  background: #c0392b;
+  color: #ffffff;
+}
+
+.type-leave {
+  background: #f1efe8;
+  color: #444441;
+}
+
+.type-leave.on {
+  background: #6f6e68;
+  color: #ffffff;
+}
+
+/* ---------- 快捷选项 ---------- */
+/* 放在时间选择器之后：先看到正式控件，快捷方式退居辅助，
+   配一行说明文字，第一次用的人才知道它们是「点一下自动填好」而不是必填步骤。 */
+
+.quick-box {
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid rgba(0, 0, 0, 0.06);
+}
+
+.quick-label {
+  font-size: 24rpx;
+  color: #9a9aa0;
+  margin-bottom: 14rpx;
+}
+
+.quick-row {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.quick-btn {
+  flex: 1;
+  text-align: center;
+  font-size: 24rpx;
+  padding: 14rpx 0;
+  border-radius: 10rpx;
+  background: #f1efe8;
+  color: #6b6b70;
+  border: 2rpx solid transparent;
+  box-sizing: border-box;
+}
+
+/* 当前区间恰好等于某个预设时点亮它，用户一眼知道「现在处于哪个预设」 */
+.quick-btn.on {
+  background: #e6f1fb;
+  border-color: #185fa5;
+  color: #0c447c;
+  font-weight: 500;
+}
+
+/* 连续 N 天：点整行应用，加减号调整天数并立即生效 */
+.streak-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 10rpx 16rpx;
+  border-radius: 10rpx;
+  background: #f1efe8;
+  border: 2rpx solid transparent;
+  box-sizing: border-box;
+}
+
+.streak-row.on {
+  background: #e6f1fb;
+  border-color: #185fa5;
+}
+
+.streak-label {
+  font-size: 24rpx;
+  color: #6b6b70;
+}
+
+.streak-row.on .streak-label {
+  color: #0c447c;
+}
+
+.streak-num {
+  font-size: 30rpx;
+  font-weight: 500;
+  min-width: 44rpx;
+  text-align: center;
+}
+
+.step-btn {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 8rpx;
+  background: #ffffff;
+  color: #1c1c1e;
+  font-size: 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 到达上下限时置灰，避免点出超限值 */
+.step-btn.off {
+  opacity: 0.35;
+}
+
+.streak-range {
+  margin-left: auto;
+  font-size: 24rpx;
+  color: #9a9aa0;
+}
+
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+
+/* 「开始 / 结束」两个字：24rpx 字宽约 48rpx，留 76rpx 有余量不换行 */
+.range-label {
+  flex: none;
+  width: 76rpx;
+  font-size: 24rpx;
+  color: #6b6b70;
+}
+
+/* 时刻那一格固定窄宽度，把剩余空间留给日期 */
+.pick-time {
+  flex: none;
+  width: 170rpx;
+}
+
+/* 跨度提示。超过 30 天上限时标红，跟提交拦截保持一致。 */
+.hint-text {
+  margin-top: 6rpx;
+}
+
+.hint-text.warn {
+  color: #e34d59;
+}
+
+.pick-wrap {
+  flex: 1;
+}
+
+.pick-cell {
+  text-align: center;
+  font-size: 30rpx;
+  font-weight: 500;
+  padding: 20rpx 0;
+  border-radius: 10rpx;
+  background: #f5f5f7;
+}
+
+/* ---------- 备注 ---------- */
+
+.note-input {
+  background: #f5f5f7;
+  border-radius: 10rpx;
+  padding: 20rpx;
+  font-size: 26rpx;
+}
+
+/* 历史备注：点一下直接填入，省掉重复打字。
+   出差地与请假事由的历史互不混用（由 utils/note.js 按类型过滤）。 */
+.note-history {
+  margin-top: 16rpx;
+}
+
+.note-history-tip {
+  font-size: 24rpx;
+  color: #9a9aa0;
+  margin-bottom: 12rpx;
+}
+
+.note-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+/* 长文本（如较长的出差地）截断显示，避免把卡片撑破 */
+.note-chip {
+  padding: 10rpx 22rpx;
+  border-radius: 100rpx;
+  font-size: 26rpx;
+  color: #4a4a4f;
+  background: #f1efe8;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 提交 ---------- */
+
+.submit-btn {
+  margin: 8rpx 0 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 保存时的行内转圈。用页面内的小 spinner 代替 wx.showLoading 的全屏遮罩，
+   等待感更轻，也不会挡住用户看到列表更新。 */
+.spinner {
+  width: 26rpx;
+  height: 26rpx;
+  margin-right: 12rpx;
+  border: 4rpx solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: btn-spin 0.7s linear infinite;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.bottom-tip {
+  text-align: center;
+  font-size: 24rpx;
+  color: #9a9aa0;
+  padding-bottom: 40rpx;
+}
+
+/* ---------- 我的记录 ---------- */
+
+.rec-row {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 0;
+  border-top: 1rpx solid rgba(0, 0, 0, 0.05);
+}
+
+.rec-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.rec-line {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.rec-tag {
+  font-size: 24rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+}
+
+/* 「我的记录」里的状态标签。类名由 fill.js 拼成 tag-<type>（如 tag-trip）。
+   必须在本页定义：board.wxss 里的 .tag-* 是页面级样式，跨页面不生效，
+   只写 .rec-tag 的话标签会是透明底，看不出状态颜色。 */
+.rec-tag.tag-office {
+  background: #e6f4ec;
+  color: #185e3c;
+}
+
+.rec-tag.tag-meeting {
+  background: #fef3c7;
+  color: #7a5a08;
+}
+
+.rec-tag.tag-trip {
+  background: #fbe9e7;
+  color: #8d2119;
+}
+
+.rec-tag.tag-leave {
+  background: #f1efe8;
+  color: #444441;
+}
+
+.rec-range {
+  font-size: 26rpx;
+  font-weight: 500;
+}
+
+.rec-date {
+  display: block;
+  font-size: 24rpx;
+  color: #9a9aa0;
+  margin-top: 6rpx;
+}
+
+.rec-note {
+  display: block;
+  font-size: 24rpx;
+  color: #6b6b70;
+  margin-top: 4rpx;
+}
+
+.rec-del {
+  font-size: 24rpx;
+  color: #e34d59;
+  padding-left: 24rpx;
+}
