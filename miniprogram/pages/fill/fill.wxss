@@ -171,6 +171,12 @@
   border-color: #185fa5;
 }
 
+/* 两行「连续 N 天」之间的间距。用独立类而不是相邻选择器，
+   免得 WXSS 选择器支持差异导致间距时有时无。 */
+.streak-row-gap {
+  margin-top: 12rpx;
+}
+
 .streak-label {
   font-size: 28rpx;
   color: #6b6b70;

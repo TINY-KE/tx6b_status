@@ -88,6 +88,19 @@
         <text class="streak-label">天</text>
         <text class="streak-range">{{streakRangeText}}</text>
       </view>
+
+      <!-- 第二行天数与上一行各自独立，改这里不会动上面那行 -->
+      <view
+        class="streak-row streak-row-gap {{streakTomorrowActive}}"
+        bindtap="onTomorrowStreakApply"
+      >
+        <text class="streak-label">明天起连续</text>
+        <view class="step-btn {{daysTomorrowMinusOff}}" data-delta="-1" catchtap="onTomorrowDaysStep">−</view>
+        <text class="streak-num">{{daysTomorrow}}</text>
+        <view class="step-btn {{daysTomorrowPlusOff}}" data-delta="1" catchtap="onTomorrowDaysStep">+</view>
+        <text class="streak-label">天</text>
+        <text class="streak-range">{{streakTomorrowRangeText}}</text>
+      </view>
     </view>
   </view>
 
