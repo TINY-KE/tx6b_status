@@ -467,3 +467,111 @@
   color: #9a9aa0;
   line-height: 1.6;
 }
+
+/* ---------- 点色条弹出的不在岗申请详情 ---------- */
+
+/* 遮罩：盖住整屏，z-index 高于自绘 tabBar，避免被底部挡住。
+   点遮罩本身关闭弹窗（bindtap=closeDetail）。 */
+.modal-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 48rpx;
+}
+
+/* 卡片：卡片上用 catchtap 拦截，点卡片内部不会穿透到遮罩关闭。 */
+.modal-card {
+  width: 100%;
+  max-height: 72vh;
+  background: #ffffff;
+  border-radius: 20rpx;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid rgba(0, 0, 0, 0.06);
+  flex: none;
+}
+
+.modal-title {
+  font-size: 36rpx;
+  font-weight: 500;
+  color: #1a1a1e;
+}
+
+.modal-close {
+  font-size: 44rpx;
+  color: #9a9aa0;
+  line-height: 1;
+  padding: 0 8rpx;
+}
+
+/* scroll-view 必须有显式高度才会滚动；max-height 配合卡片的 max-height 64vh */
+.modal-body {
+  padding: 8rpx 32rpx 24rpx;
+  max-height: 62vh;
+  flex: 1;
+}
+
+.modal-app {
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid rgba(0, 0, 0, 0.04);
+}
+
+.modal-app:last-child {
+  border-bottom: none;
+}
+
+/* 被点的那一根色条对应的那天、且这条申请正好覆盖那天 → 左侧加一道蓝色竖条提示 */
+.modal-app.focus {
+  border-left: 6rpx solid #185fa5;
+  padding-left: 16rpx;
+  margin-left: -22rpx;
+}
+
+.modal-app-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+/* 状态名用对应状态色（bd-* 那组），跟上方色条一一对应 */
+.modal-tag {
+  font-size: 32rpx;
+  font-weight: 500;
+  margin-right: 16rpx;
+}
+
+.modal-note {
+  font-size: 30rpx;
+  color: #1a1a1e;
+  margin-right: 16rpx;
+}
+
+/* 完整起止区间（如 9/14 - 9/20）单独一行，弱化的灰，和状态名/备注区分开 */
+.modal-time {
+  display: block;
+  font-size: 28rpx;
+  color: #6b6b70;
+  margin-top: 6rpx;
+}
+
+.modal-empty {
+  font-size: 32rpx;
+  color: #6b6b70;
+  text-align: center;
+  padding: 60rpx 0;
+}

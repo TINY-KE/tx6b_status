@@ -112,7 +112,7 @@
           </view>
         </view>
 
-        <view class="prow prow-recent" wx:for="{{recentPeople}}" wx:key="key">
+        <view class="prow prow-recent" wx:for="{{recentPeople}}" wx:for-index="pi" wx:key="key">
           <view
             class="name-col"
             data-name="{{item.name}}"
@@ -129,6 +129,9 @@
               wx:for-item="day"
               wx:for-index="di"
               wx:key="index"
+              data-pi="{{pi}}"
+              data-di="{{di}}"
+              bindtap="onTapBar"
             >
               <view class="bar">
                 <view
@@ -165,5 +168,27 @@
     </swiper-item>
 
   </swiper>
+
+  <!-- 点击色条弹出的「不在岗申请」详情。遮罩点一下就关，卡片内部点不会关 -->
+  <view class="modal-mask" wx:if="{{showDetail}}" bindtap="closeDetail">
+    <view class="modal-card" catchtap="noop">
+      <view class="modal-head">
+        <text class="modal-title">{{detail.name}} · 不在岗申请</text>
+        <view class="modal-close" bindtap="closeDetail">×</view>
+      </view>
+      <scroll-view class="modal-body" scroll-y>
+        <block wx:if="{{detail.hasAny}}">
+          <view class="modal-app {{a.focus ? 'focus' : ''}}" wx:for="{{detail.apps}}" wx:for-item="a" wx:key="index">
+            <view class="modal-app-line">
+              <text class="modal-tag {{a.cls}}">{{a.typeName}}</text>
+              <text class="modal-note" wx:if="{{a.note}}">{{a.note}}</text>
+            </view>
+            <text class="modal-time">{{a.rangeLabel}}</text>
+          </view>
+        </block>
+        <view class="modal-empty" wx:else>{{detail.emptyText}}</view>
+      </scroll-view>
+    </view>
+  </view>
 
 </view>

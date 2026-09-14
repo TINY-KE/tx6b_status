@@ -358,9 +358,15 @@ async function rangeBoard(event) {
   if (dept) staffWhere.dept = dept;
   const staffList = await fetchAll('staff', staffWhere);
 
-  // 一次把整个区间的记录拉出来，再在内存里按天拆分，避免逐天查库
+  // 一次把整个区间的记录拉出来，再在内存里按天拆分，避免逐天查库。
+  //
+  // 注意：这里不能再用 startAt 上限（原先是「startAt < 窗口最后一天结束」）。
+  // 弹窗要显示「今天及以后（含三天窗口之外）」的全部不在岗申请，
+  // 若卡这个上限，周四~周六的出差根本查不出来——它的 startAt 晚于窗口最后一天，
+  // 数据库直接把它过滤掉了，后面 applications 的过滤条件再宽松也拿不到数据。
+  // 所以只保留 endAt 下界：结束时间晚于窗口第一天 0 点的记录全部拉回
+  // （即「今天及以后仍未结束」的记录，包含跨天延续到今天的、以及未来任意一天的）。
   const recWhere = {
-    startAt: _.lt(dayEnd(sorted[sorted.length - 1])),
     endAt: _.gt(dayStart(sorted[0])),
   };
   if (dept) recWhere.dept = dept;
@@ -409,6 +415,34 @@ async function rangeBoard(event) {
       };
     });
 
+    // 点色条弹窗用：列出「今天及以后（含三天之后）的所有不在岗申请」，每条显示完整起止区间
+    // （而非按天切片的色块）。例如周一申请整周出差，周三点开仍显示这一整段出差；
+    // 又如周一申请周四~周六出差，虽然落在三天窗口之外，也一并显示出来，方便提前掌握去向。
+    // 口径：结束时间晚于今天 0 点的申请都算（即尚未结束的、以及未来任何一天的），不限提交时间。
+    const winStart = dayStart(dates[0]).getTime();
+    const applications = mine
+      .filter((r) => {
+        if (r.type === 'office') return false;
+        const re = new Date(r.endAt).getTime();
+        return re > winStart;
+      })
+      .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))
+      .map((r) => {
+        const rs = new Date(r.startAt).getTime();
+        const re = new Date(r.endAt).getTime();
+        return {
+          type: r.type,
+          note: r.note || '',
+          rangeLabel: toShortDate(r.startAt) + ' ' + toMinuteText(r.startAt) + ' - ' + toShortDate(r.endAt) + ' ' + toMinuteText(r.endAt),
+          // 覆盖这三天中的哪几天：弹窗里用来高亮被点的那天（若这条申请落在那天）
+          coverDays: dates.map((d) => {
+            const ds = dayStart(d).getTime();
+            const de = dayEnd(d).getTime();
+            return rs < de && re > ds;
+          }),
+        };
+      });
+
     return {
       openid: s.openid || '',
       name: s.name || '',
@@ -416,6 +450,7 @@ async function rangeBoard(event) {
       phone: s.phone || '',
       joined,
       days,
+      applications,
     };
   });
 

@@ -29,6 +29,10 @@ Page({
     recentPeople: [],
     recentLoaded: false,
 
+    // 点色条弹出的「不在岗申请」详情。detail 为 null 时不渲染遮罩。
+    showDetail: false,
+    detail: null,
+
     loading: true,
     errorMsg: '',
     joined: false,
@@ -240,11 +244,18 @@ Page({
           // 色条下方列出当天所有「不在岗」时段：备注 + 时间段。
           // 备注为空的老记录（备注是后加的必填项）退化成状态名（京内/京外/请假），
           // 否则色条下面会挂一行空白，看着像没加载出来。
-          const items = (day.items || []).map((it) => ({
-            label: this.ellipsis((it.note || '').trim() || statusUtil.typeShort(it.type), NOTE_MAX_UNITS),
-            time: it.time || '',
-            cls: 'bd-' + it.type,
-          }));
+          // typeName / note 是为「点色条弹窗」多带的：弹窗里要显示完整状态名 + 备注，
+          // 而色条下方的那行只显示 label（备注为空时退化成状态短名），两者用途不同。
+          const items = (day.items || []).map((it) => {
+            const note = (it.note || '').trim();
+            return {
+              label: this.ellipsis(note || statusUtil.typeShort(it.type), NOTE_MAX_UNITS),
+              note,
+              typeName: statusUtil.typeLabel(it.type),
+              time: it.time || '',
+              cls: 'bd-' + it.type,
+            };
+          });
           return {
             bars: segs.map((s) => ({
               flex: s.span,
@@ -253,6 +264,16 @@ Page({
             items,
           };
         }),
+        // 点色条弹窗用的「完整申请」：每条是一条记录（跨多天的也只算一条），
+        // 显示完整起止区间（含详细时刻），不在岗状态名与配色复用 statusUtil / bd-*。
+        // 服务端的 applications 已包含今天及以后（含三天之后）的全部不在岗申请。
+        applications: (p.applications || []).map((a) => ({
+          typeName: statusUtil.typeLabel(a.type),
+          note: a.note || '',
+          rangeLabel: a.rangeLabel || '',
+          coverDays: a.coverDays || [],
+          cls: 'bd-' + a.type,
+        })),
       }));
       this.setData({ recentPeople: people, recentLoaded: true });
     } catch (e) {
@@ -338,6 +359,41 @@ Page({
   onScreenTap(e) {
     this.setData({ screenIndex: Number(e.currentTarget.dataset.i) });
   },
+
+  // 点击第二屏的色条 → 弹出该用户「今天及以后（含三天之后）的所有不在岗申请」。
+  // 口径与服务端一致：结束时间晚于今天 0 点的申请都列出，每条一条完整记录，不再按天切片。
+  // 例如周一申请周四~周六出差，虽然落在三天窗口之外，也会显示出来。
+  // data-pi 是人员序号、data-di 是被点的那天序号（用于高亮覆盖那天的申请）。
+  onTapBar(e) {
+    const ds = e.currentTarget.dataset;
+    const pi = Number(ds.pi);
+    const di = Number(ds.di);
+    const person = this.data.recentPeople[pi];
+    if (!person) return;
+    // 直接列完整申请（每条一条记录），不再按天切片。
+    const apps = (person.applications || []).map((a) => ({
+      typeName: a.typeName,
+      note: a.note,
+      rangeLabel: a.rangeLabel,
+      cls: a.cls,
+      // 这条申请覆盖被点的那天 → 高亮
+      focus: !!(a.coverDays && a.coverDays[di]),
+    }));
+    let emptyText = '暂无不在岗申请';
+    if (!person.joined) emptyText = person.name + ' 还没有认领身份，暂无法查看去向详情';
+    this.setData({
+      showDetail: true,
+      detail: { name: person.name, joined: person.joined, apps, hasAny: apps.length > 0, emptyText },
+    });
+  },
+
+  // 点遮罩或右上角 × 关闭弹窗
+  closeDetail() {
+    this.setData({ showDetail: false });
+  },
+
+  // 点卡片内部时拦截冒泡，避免穿透到遮罩把弹窗关掉
+  noop() {},
 
   onPullDownRefresh() {
     const jobs = [this.loadToday()];
