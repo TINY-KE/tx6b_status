@@ -176,6 +176,26 @@ function mergeSegments(dots) {
   }));
 }
 
+// 给一个时间段找它对应的记录备注（出差地 / 请假事由）。
+//
+// 为什么要「类型 + 时间重叠」双重匹配：同一个人一天里可能有多条记录
+// （上午京内出差、下午请假），只按类型找会把不相干的备注贴到这一段上。
+// 另外跨天的长记录会被按天切成多段，每段都能匹配回同一条记录，
+// 所以出差第二天仍然带着同一个出差地。
+function noteForSegment(mine, dateStr, seg) {
+  if (!mine || !mine.length || !seg) return '';
+  const base = dayStart(dateStr).getTime();
+  const sMin = base + timeTextToMinutes(seg.start) * 60000;
+  const eMin = base + timeTextToMinutes(seg.end) * 60000;
+  const rec = mine.find((r) => {
+    if (r.type !== seg.type) return false;
+    const rStart = new Date(r.startAt).getTime();
+    const rEnd = new Date(r.endAt).getTime();
+    return rStart < eMin && rEnd > sMin;
+  });
+  return rec ? (rec.note || '') : '';
+}
+
 // 取时段最多的那个状态作为「主要状态」，用于列表标签和人数统计
 function mainTypeOf(dots, fallback) {
   const count = {};
@@ -259,22 +279,8 @@ async function collectDay(dept, dateStr) {
     const mainType = mainTypeOf(dots, joined ? 'office' : '');
     const firstNonOffice = segments.find((x) => x.type !== 'office');
 
-    // 看板标签要显示「出差地/请假事由」时，取与第一个非 office 时段对应的记录备注。
-    // 用类型 + 时间重叠来匹配，避免多记录时拿到不相干的 note。
-    let tagNote = '';
-    if (firstNonOffice && mine.length) {
-      const segStartMin = timeTextToMinutes(firstNonOffice.start);
-      const segEndMin = timeTextToMinutes(firstNonOffice.end);
-      const rec = mine.find((r) => {
-        if (r.type !== firstNonOffice.type) return false;
-        const rStart = new Date(r.startAt).getTime();
-        const rEnd = new Date(r.endAt).getTime();
-        const sMin = dayStart(dateStr).getTime() + segStartMin * 60000;
-        const eMin = dayStart(dateStr).getTime() + segEndMin * 60000;
-        return rStart < eMin && rEnd > sMin;
-      });
-      tagNote = rec ? (rec.note || '') : '';
-    }
+    // 看板标签要显示「出差地/请假事由」时，取与第一个非 office 时段对应的记录备注
+    const tagNote = firstNonOffice ? noteForSegment(mine, dateStr, firstNonOffice) : '';
 
     return {
       openid: s.openid || '',
@@ -381,12 +387,23 @@ async function rangeBoard(event) {
       }
       const segments = mergeSegments(dots);
       const mainType = mainTypeOf(dots, joined ? 'office' : '');
+      // 第二屏色条下方要列当天所有「不在岗」时段（备注 + 时间段）。
+      // 在岗不列：色条本身已经表达清楚了，列进去只会把每行撑高一倍。
+      // 备注为空的老记录（备注是后加的必填项）由前端退化成状态名，这里原样传空串。
+      const items = segments
+        .filter((sg) => sg.type !== 'office')
+        .map((sg) => ({
+          type: sg.type,
+          time: sg.text,
+          note: noteForSegment(mine, d, sg),
+        }));
       return {
         date: d,
         confirmed: hasRecord,
         joined,
         segments,
         mainType,
+        items,
         // 供 WXML 直接渲染：色块宽度用 span，样式类用 dotClass
         empty: !joined,
       };

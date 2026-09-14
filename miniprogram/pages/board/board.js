@@ -5,6 +5,13 @@ const DEPT_KEY = 'presence_last_dept';
 const PAGE_STEP = 24; // 一次渲染多少人，避免 100 人一次性铺开卡顿
 const FALLBACK_DEPTS = ['1室', '2室', '3室', '4室', '部办'];
 
+// 第二屏色条下方备注（出差地/请假事由）的截断宽度。
+// 单列只有约 183rpx（750 - 左右内边距 48 - 姓名列 128 - 两个 12rpx 间距，再除以 3），
+// 28rpx 字号下一个汉字占 28rpx，所以最多放得下 6 个汉字 = 12 个等效宽度。
+// 超过就截断加省略号——这里不做换行，否则同一行里每列的备注行数不同，
+// 三个色条会错位、看不出谁对应哪天。
+const NOTE_MAX_UNITS = 12;
+
 Page({
   data: {
     date: '',
@@ -230,11 +237,20 @@ Page({
           // 表现就是「上午出差、下午在岗」，整条却全成了出差色。
           const bars = statusUtil.barsFromSegments(day.segments, '');
           const segs = bars.length ? bars : [{ type: '', span: statusUtil.SLOT_COUNT }];
+          // 色条下方列出当天所有「不在岗」时段：备注 + 时间段。
+          // 备注为空的老记录（备注是后加的必填项）退化成状态名（京内/京外/请假），
+          // 否则色条下面会挂一行空白，看着像没加载出来。
+          const items = (day.items || []).map((it) => ({
+            label: this.ellipsis((it.note || '').trim() || statusUtil.typeShort(it.type), NOTE_MAX_UNITS),
+            time: it.time || '',
+            cls: 'bd-' + it.type,
+          }));
           return {
             bars: segs.map((s) => ({
               flex: s.span,
               barClass: this.segClass(s.type, day.confirmed, day.joined),
             })),
+            items,
           };
         }),
       }));

@@ -123,14 +123,33 @@
             <text class="pname">{{item.name}}</text>
           </view>
           <view class="recent-cols">
-            <view class="bar" wx:for="{{item.days}}" wx:for-item="day" wx:key="index">
+            <view
+              class="bar-cell"
+              wx:for="{{item.days}}"
+              wx:for-item="day"
+              wx:for-index="di"
+              wx:key="index"
+            >
+              <view class="bar">
+                <view
+                  class="bar-seg {{b.barClass}}"
+                  wx:for="{{day.bars}}"
+                  wx:for-item="b"
+                  wx:for-index="bi"
+                  wx:key="index"
+                  style="flex:{{b.flex}}"
+                ></view>
+              </view>
               <view
-                class="bar-seg {{b.barClass}}"
-                wx:for="{{day.bars}}"
-                wx:for-item="b"
-                wx:key="index"
-                style="flex:{{b.flex}}"
-              ></view>
+                class="bar-note"
+                wx:for="{{day.items}}"
+                wx:for-item="nt"
+                wx:for-index="ni"
+                wx:key="time"
+              >
+                <text class="bar-note-text {{nt.cls}}">{{nt.label}}</text>
+                <text class="bar-note-time">{{nt.time}}</text>
+              </view>
             </view>
           </view>
         </view>
