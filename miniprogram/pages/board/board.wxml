@@ -21,10 +21,7 @@
       >{{item.label}}</view>
     </scroll-view>
 
-    <view class="screen-tabs">
-      <view class="screen-tab {{screenIndex === 0 ? 'on' : ''}}" data-i="0" bindtap="onScreenTap">今天</view>
-      <view class="screen-tab {{screenIndex === 1 ? 'on' : ''}}" data-i="1" bindtap="onScreenTap">未来3个工作日</view>
-    </view>
+    
 
     <view class="stats" wx:if="{{stats}}">
       <view class="stat">
@@ -44,7 +41,10 @@
         <text class="stat-label">请假</text>
       </view>
     </view>
-
+    <view class="screen-tabs">
+      <view class="screen-tab {{screenIndex === 0 ? 'on' : ''}}" data-i="0" bindtap="onScreenTap">今天</view>
+      <view class="screen-tab {{screenIndex === 1 ? 'on' : ''}}" data-i="1" bindtap="onScreenTap">未来3个工作日</view>
+    </view>
     <!-- 图例固定在这里（header 不随列表滚动）。
          原先放在列表末尾，人一多就要滚到底才看得到，等于没有图例。
          四个色点两屏共用，所以只留这一份。 -->
