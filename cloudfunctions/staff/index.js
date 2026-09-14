@@ -98,6 +98,8 @@ exports.main = async (event) => {
       return removeOne(event, OPENID);
     case 'setAdmin':
       return setAdmin(event, OPENID);
+    case 'fixAdmins':
+      return fixAdmins(OPENID);
     case 'clearUnclaimed':
       return clearUnclaimed();
     default:
@@ -266,6 +268,23 @@ async function setAdmin(event, openid) {
   }
   await db.collection('staff').doc(id).update({ data: { isAdmin: !!event.isAdmin } });
   return { success: true };
+}
+
+// 一次性修正存量数据：把「除操作者本人以外」的管理员标记全部取消。
+//
+// 背景：认领流程里「第一个使用者自动成为管理员」的判断曾经写成
+// `claimedAt: db.command.exists(true)`，用字段存在性推断不可靠，导致**每个认领的人都**
+// 拿到管理员标记。判断已改用 openid 口径（见 login 云函数），但已经写进库里的错误标记需要清理。
+// 保留操作者本人，避免把自己也降级后进不去管理页。
+async function fixAdmins(openid) {
+  const admins = await fetchAll({ isAdmin: true });
+  const names = [];
+  for (const d of admins) {
+    if (d.openid && d.openid === openid) continue;
+    await db.collection('staff').doc(d._id).update({ data: { isAdmin: false } });
+    names.push(d.name || '');
+  }
+  return { success: true, removed: names.length, names: names.slice(0, 20) };
 }
 
 // 清空尚未被认领的名册项，用于导入出错后重来。已认领的人不受影响。

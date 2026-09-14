@@ -43,7 +43,7 @@
       <input
         class="field-input"
         type="number"
-        placeholder="选填，便于同事联系"
+        placeholder="必填，便于同事联系"
         value="{{editPhone}}"
         maxlength="20"
         bindinput="onEditPhone"
@@ -72,7 +72,7 @@
       <input
         class="field-input"
         type="number"
-        placeholder="选填，便于同事联系"
+        placeholder="必填，便于同事联系"
         value="{{setupPhone}}"
         maxlength="20"
         bindinput="onSetupPhone"
@@ -101,7 +101,7 @@
       <input
         class="claim-phone-input"
         type="number"
-        placeholder="选填，便于同事在外出时联系你"
+        placeholder="必填，便于同事在外出时联系你"
         value="{{claimPhone}}"
         maxlength="20"
         bindinput="onClaimPhone"

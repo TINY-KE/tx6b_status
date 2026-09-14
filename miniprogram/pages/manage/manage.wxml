@@ -56,6 +56,13 @@
       <view class="empty" wx:if="{{filtered.length === 0}}">没有匹配的人员</view>
     </view>
 
+    <view class="card">
+      <view class="sec-title">修正管理员标记</view>
+      <view class="hint-text">早期版本判断「第一个认领者」的逻辑有误，曾导致每个新认领的人都带上管理员标记。</view>
+      <view class="hint-text">点下面的按钮可一次性清理：只保留你自己，其余全部取消管理员。</view>
+      <view class="danger-btn" bindtap="fixAdmins">只保留我为管理员</view>
+    </view>
+
   </block>
 
   <block wx:else>

@@ -107,8 +107,10 @@ async function bootstrap(event, openid) {
   const dept = String(event.dept || '').trim();
   if (!name) return { success: false, message: '请填写姓名' };
   if (DEPTS.indexOf(dept) < 0) return { success: false, message: '请选择科室' };
+  // 电话在创建身份时是必填的（与认领流程保持一致）
   const phone = normalizePhone(event.phone);
   if (phone === null) return { success: false, message: '电话号码格式不正确' };
+  if (!phone) return { success: false, message: '请填写电话号码' };
 
   const addRes = await db.collection('staff').add({
     data: {
@@ -155,20 +157,27 @@ async function claim(event, openid) {
     return { success: false, message: '该身份已被认领' };
   }
 
-  // 电话由用户自己在认领时填写，是选填项
+  // 电话在认领时是必填的
   const phone = normalizePhone(event.phone);
   if (phone === null) return { success: false, message: '电话号码格式不正确' };
+  if (!phone) return { success: false, message: '请填写电话号码' };
 
-  // 是否已经是本系统里的第一个使用者 → 自动授予管理员。
-  // 用 claimedAt 是否存在来判断「有没有人认领过」，比判断 openid 是否为空更明确。
-  const claimedCount = await db.collection('staff').where({ claimedAt: db.command.exists(true) }).count();
-  const isFirst = claimedCount.total === 0;
+  // 「第一个使用者自动成为管理员」的判断。
+  //
+  // ✗ 别写成 claimedAt: db.command.exists(true)：用「字段是否存在」推断「有没有人认领过」
+  //   不可靠，实测会每次都判成"第一个"，结果是**每个认领的人都变成管理员**。
+  // ✓ 用项目统一的「已认领」口径（openid 非空），再加一道保险：
+  //   只要已经存在任何管理员，就绝不再自动授予。
+  const claimedCount = await db.collection('staff').where({ openid: db.command.neq('') }).count();
+  const adminCount = await db.collection('staff').where({ isAdmin: true }).count();
+  const isFirst = claimedCount.total === 0 && adminCount.total === 0;
+  console.log('[claim] claimed=' + claimedCount.total + ' admin=' + adminCount.total + ' isFirst=' + isFirst);
 
   const patch = {
     openid,
     claimedAt: db.serverDate(),
+    phone: phone,
   };
-  if (phone) patch.phone = phone;
   if (isFirst) patch.isAdmin = true;
 
   await db.collection('staff').doc(staffId).update({ data: patch });
@@ -186,10 +195,12 @@ async function updateProfile(event, openid) {
   const patch = {};
   if (event.name) patch.name = String(event.name).trim().slice(0, 20);
   if (event.dept && DEPTS.indexOf(event.dept) >= 0) patch.dept = event.dept;
-  // 用 typeof 判断：允许把电话清空（传空串），真值判断会把「清空」当成「没传」
+  // 用 typeof 判断「传没传这个字段」（真值判断会把空串当成没传）。
+  // 电话是必填项，所以传了就不允许为空——这样"必填"才是贯彻到底的。
   if (typeof event.phone === 'string') {
     const phone = normalizePhone(event.phone);
     if (phone === null) return { success: false, message: '电话号码格式不正确' };
+    if (!phone) return { success: false, message: '请填写电话号码' };
     patch.phone = phone;
   }
   if (Object.keys(patch).length === 0) {

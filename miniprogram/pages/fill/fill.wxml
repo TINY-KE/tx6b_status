@@ -1,136 +1,140 @@
 <view class="page">
 
-  <view class="join-card" wx:if="{{!joined}}">
-    <text class="join-title">还没有你的身份</text>
-    <text class="join-desc">建议先在「我的」里从部门名册中认领自己，才能填写去向</text>
-    <view class="btn-primary" bindtap="goMine">去认领</view>
+  <!-- 未认领时**不挡住**填写界面：审核要求打开就能看到核心功能。
+       这里只作一条提示，真正的拦截放在点「保存」那一刻（见 fill.js 的 submit）。 -->
+  <view class="join-bar" wx:if="{{!joined}}">
+    <view class="join-text">
+      <text class="join-title">还没有你的身份</text>
+      <text class="join-desc">建议先在「我的」里从部门名册中认领自己，否则无法提交</text>
+    </view>
+    <view class="join-btn" bindtap="goMine">去认领</view>
   </view>
 
-  <block wx:else>
+  <view class="card">
+    <view class="sec-title">去向</view>
+    <view class="type-grid">
+      <view
+        class="type-btn {{item.colorClass}} {{item.active}}"
+        wx:for="{{types}}"
+        wx:key="value"
+        data-value="{{item.value}}"
+        bindtap="onPickType"
+      >{{item.label}}</view>
+    </view>
+  </view>
 
-    <view class="card">
-      <view class="sec-title">去向</view>
-      <view class="type-grid">
+  <view class="card">
+    <view class="sec-title">时间段</view>
+
+    <view class="range-row">
+      <text class="range-label">开始</text>
+      <picker
+        class="pick-wrap"
+        mode="date"
+        value="{{startDate}}"
+        start="{{dateMin}}"
+        end="{{dateMax}}"
+        bindchange="onStartDateChange"
+      >
+        <view class="pick-cell">{{startDateText}}</view>
+      </picker>
+      <picker class="pick-wrap pick-time" mode="time" value="{{startTime}}" bindchange="onStartTimeChange">
+        <view class="pick-cell">{{startTime}}</view>
+      </picker>
+    </view>
+
+    <view class="range-row">
+      <text class="range-label">结束</text>
+      <picker
+        class="pick-wrap"
+        mode="date"
+        value="{{endDate}}"
+        start="{{dateMin}}"
+        end="{{dateMax}}"
+        bindchange="onEndDateChange"
+      >
+        <view class="pick-cell">{{endDateText}}</view>
+      </picker>
+      <picker class="pick-wrap pick-time" mode="time" value="{{endTime}}" bindchange="onEndTimeChange">
+        <view class="pick-cell">{{endTime}}</view>
+      </picker>
+    </view>
+
+    <!-- 区间非法时的行内提示。时间段改为完全手动后必须有它，
+         否则用户要等点「保存」才知道结束时间早于开始时间。 -->
+    <view class="range-warn" wx:if="{{rangeWarnText}}">{{rangeWarnText}}</view>
+
+    <!-- <view class="hint-text {{spanWarn ? 'warn' : ''}}">{{spanText}}</view> -->
+    <!-- <view class="hint-text">在位看板的时间轴为 8:30 - 18:00，超出这一时段的安排不展示</view> -->
+
+    <view class="quick-box">
+      <view class="quick-label">时间段快捷选项（点一下自动填好）</view>
+
+      <view class="quick-row">
         <view
-          class="type-btn {{item.colorClass}} {{item.active}}"
-          wx:for="{{types}}"
-          wx:key="value"
-          data-value="{{item.value}}"
-          bindtap="onPickType"
+          class="quick-btn {{item.active}}"
+          wx:for="{{quickButtons}}"
+          wx:key="kind"
+          data-kind="{{item.kind}}"
+          bindtap="onQuickRange"
         >{{item.label}}</view>
       </view>
+
+      <view class="streak-row {{streakActive}}" bindtap="onStreakApply">
+        <text class="streak-label">今天起连续</text>
+        <view class="step-btn {{daysMinusOff}}" data-delta="-1" catchtap="onDaysStep">−</view>
+        <text class="streak-num">{{days}}</text>
+        <view class="step-btn {{daysPlusOff}}" data-delta="1" catchtap="onDaysStep">+</view>
+        <text class="streak-label">天</text>
+        <text class="streak-range">{{streakRangeText}}</text>
+      </view>
     </view>
+  </view>
 
-    <view class="card">
-      <view class="sec-title">时间段</view>
+  <view class="card">
+    <view class="sec-title">{{noteTitle}}</view>
+    <input
+      class="note-input"
+      placeholder="{{notePlaceholder}}"
+      value="{{note}}"
+      maxlength="50"
+      bindinput="onNoteChange"
+    />
 
-      <view class="range-row">
-        <text class="range-label">开始</text>
-        <picker
-          class="pick-wrap"
-          mode="date"
-          value="{{startDate}}"
-          start="{{dateMin}}"
-          end="{{dateMax}}"
-          bindchange="onStartDateChange"
-        >
-          <view class="pick-cell">{{startDateText}}</view>
-        </picker>
-        <picker class="pick-wrap pick-time" mode="time" value="{{startTime}}" bindchange="onStartTimeChange">
-          <view class="pick-cell">{{startTime}}</view>
-        </picker>
+    <view class="note-history" wx:if="{{noteHistory.length}}">
+      <view class="note-history-tip">历史记录，点一下直接填入</view>
+      <view class="note-chips">
+        <view
+          class="note-chip"
+          wx:for="{{noteHistory}}"
+          wx:key="*this"
+          data-note="{{item}}"
+          bindtap="onPickNote"
+        >{{item}}</view>
       </view>
+    </view>
+  </view>
 
-      <view class="range-row">
-        <text class="range-label">结束</text>
-        <picker
-          class="pick-wrap"
-          mode="date"
-          value="{{endDate}}"
-          start="{{dateMin}}"
-          end="{{dateMax}}"
-          bindchange="onEndDateChange"
-        >
-          <view class="pick-cell">{{endDateText}}</view>
-        </picker>
-        <picker class="pick-wrap pick-time" mode="time" value="{{endTime}}" bindchange="onEndTimeChange">
-          <view class="pick-cell">{{endTime}}</view>
-        </picker>
-      </view>
+  <view class="btn-primary submit-btn" bindtap="submit">
+    <view class="spinner" wx:if="{{submitting}}"></view>
+    <text>{{submitText}}</text>
+  </view>
 
-      <!-- <view class="hint-text {{spanWarn ? 'warn' : ''}}">{{spanText}}</view> -->
-      <!-- <view class="hint-text">在位看板的时间轴为 8:30 - 18:00，超出这一时段的安排不展示</view> -->
-
-      <view class="quick-box">
-        <view class="quick-label">时间段快捷选项（点一下自动填好）</view>
-
-        <view class="quick-row">
-          <view
-            class="quick-btn {{item.active}}"
-            wx:for="{{quickButtons}}"
-            wx:key="kind"
-            data-kind="{{item.kind}}"
-            bindtap="onQuickRange"
-          >{{item.label}}</view>
+  <view class="card" wx:if="{{myList.length}}">
+    <view class="sec-title">我最近的记录</view>
+    <view class="rec-row" wx:for="{{myList}}" wx:key="_id">
+      <view class="rec-main">
+        <view class="rec-line">
+          <text class="rec-tag {{item.typeClass}}">{{item.typeLabel}}</text>
+          <text class="rec-range" wx:if="{{item.rangeText}}">{{item.rangeText}}</text>
         </view>
-
-        <view class="streak-row {{streakActive}}" bindtap="onStreakApply">
-          <text class="streak-label">今天起连续</text>
-          <view class="step-btn {{daysMinusOff}}" data-delta="-1" catchtap="onDaysStep">−</view>
-          <text class="streak-num">{{days}}</text>
-          <view class="step-btn {{daysPlusOff}}" data-delta="1" catchtap="onDaysStep">+</view>
-          <text class="streak-label">天</text>
-          <text class="streak-range">{{streakRangeText}}</text>
-        </view>
+        <text class="rec-date">{{item.dateText}}</text>
+        <text class="rec-note" wx:if="{{item.note}}">{{item.note}}</text>
       </view>
+      <text class="rec-del" data-id="{{item._id}}" bindtap="removeRecord">删除</text>
     </view>
+  </view>
 
-    <view class="card">
-      <view class="sec-title">{{noteTitle}}</view>
-      <input
-        class="note-input"
-        placeholder="{{notePlaceholder}}"
-        value="{{note}}"
-        maxlength="50"
-        bindinput="onNoteChange"
-      />
-
-      <view class="note-history" wx:if="{{noteHistory.length}}">
-        <view class="note-history-tip">历史记录，点一下直接填入</view>
-        <view class="note-chips">
-          <view
-            class="note-chip"
-            wx:for="{{noteHistory}}"
-            wx:key="*this"
-            data-note="{{item}}"
-            bindtap="onPickNote"
-          >{{item}}</view>
-        </view>
-      </view>
-    </view>
-
-    <view class="btn-primary submit-btn" bindtap="submit">
-      <view class="spinner" wx:if="{{submitting}}"></view>
-      <text>{{submitText}}</text>
-    </view>
-
-    <view class="card" wx:if="{{myList.length}}">
-      <view class="sec-title">我最近的记录</view>
-      <view class="rec-row" wx:for="{{myList}}" wx:key="_id">
-        <view class="rec-main">
-          <view class="rec-line">
-            <text class="rec-tag {{item.typeClass}}">{{item.typeLabel}}</text>
-            <text class="rec-range" wx:if="{{item.rangeText}}">{{item.rangeText}}</text>
-          </view>
-          <text class="rec-date">{{item.dateText}}</text>
-          <text class="rec-note" wx:if="{{item.note}}">{{item.note}}</text>
-        </view>
-        <text class="rec-del" data-id="{{item._id}}" bindtap="removeRecord">删除</text>
-      </view>
-    </view>
-
-    <view class="bottom-tip">保存后，「在位看板」会立即同步</view>
-
-  </block>
+  <view class="bottom-tip">保存后，「在位看板」会立即同步</view>
 
 </view>

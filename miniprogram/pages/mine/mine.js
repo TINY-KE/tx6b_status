@@ -95,6 +95,10 @@ Page({
       return;
     }
     const phone = String(this.data.setupPhone || '').trim();
+    if (!phone) {
+      wx.showToast({ title: '请填写电话号码', icon: 'none' });
+      return;
+    }
 
     wx.showLoading({ title: '创建中' });
     try {
@@ -184,6 +188,12 @@ Page({
 
   async doClaim(e) {
     const item = e.currentTarget.dataset;
+    // 电话是必填项。先校验再弹确认框——否则用户点了「是我」才被告知没填，白跑一趟。
+    const phone = String(this.data.claimPhone || '').trim();
+    if (!phone) {
+      wx.showToast({ title: '请先填写电话号码', icon: 'none' });
+      return;
+    }
     const res = await new Promise((resolve) => {
       wx.showModal({
         title: '确认身份',
@@ -203,7 +213,7 @@ Page({
         data: {
           action: 'claim',
           staffId: item.id,
-          phone: String(this.data.claimPhone || '').trim(),
+          phone,
         },
       });
       if (result && result.success) {
@@ -270,6 +280,12 @@ Page({
       wx.showToast({ title: '请填写姓名', icon: 'none' });
       return;
     }
+    // 电话是必填项，编辑时也不允许留空
+    const phone = String(this.data.editPhone || '').trim();
+    if (!phone) {
+      wx.showToast({ title: '请填写电话号码', icon: 'none' });
+      return;
+    }
     this.setData({ saving: true });
     wx.showLoading({ title: '保存中' });
     try {
@@ -279,7 +295,7 @@ Page({
           action: 'update',
           name,
           dept: this.data.editDept,
-          phone: String(this.data.editPhone || '').trim(),
+          phone,
         },
       });
       if (result && result.success) {

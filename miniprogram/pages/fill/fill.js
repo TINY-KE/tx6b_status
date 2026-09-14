@@ -11,14 +11,6 @@ const FUTURE_DAYS = 30;
 const STREAK_MIN = 2;
 const STREAK_MAX = SPAN_LIMIT_DAYS;
 
-function pad2(n) {
-  return n < 10 ? '0' + n : '' + n;
-}
-
-function minToText(m) {
-  return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60);
-}
-
 // 把「日期 + 时刻」转成时间戳。
 // 小程序跑在用户手机上，本地时区就是 +08:00，直接构造即可；
 // 云函数那边运行在 UTC，写法完全不同，两处不要互相复制。
@@ -26,13 +18,8 @@ function tsOf(dateStr, timeStr) {
   return new Date(dateStr + 'T' + timeStr + ':00').getTime();
 }
 
-// 时刻往后推 1 小时，用于自动纠正「结束早于开始」
-function bumpHour(timeStr) {
-  const parts = timeStr.split(':');
-  let m = Number(parts[0]) * 60 + Number(parts[1]) + 60;
-  if (m > 23 * 60 + 59) m = 23 * 60 + 59;
-  return minToText(m);
-}
+// 原先这里还有 pad2 / minToText / bumpHour 三个辅助函数，专供「结束时刻早于开始时刻
+// 就自动顺延一小时」那段联动使用。联动去掉后它们全成了死代码，一并删除。
 
 Page({
   data: {
@@ -56,6 +43,9 @@ Page({
     dateMax: '',
     spanText: '',
     spanWarn: false,
+    // 区间非法时的行内提示（结束早于开始、跨度过大）。
+    // 去掉自动纠正后必须补上它，否则用户只能等提交时才知道填错了。
+    rangeWarnText: '',
 
     // 快捷选项。点按钮会连同日期一起写好，所以「今天上午」这类标签
     // 必须写清「今天」——它们不以当前选中的日期为锚点。
@@ -120,15 +110,28 @@ Page({
     });
   },
 
+  // 算跨度文案，同时检查区间是否合法。
+  // 时间段联动已全部去掉（改哪个字段就只改那个字段），所以「结束早于开始」
+  // 变成用户能手动选出来的状态，必须在这里给即时反馈——
+  // 否则只能等点「保存」时才被 toast 拦下，前面几步白填。
   refreshSpan() {
-    const { startDate, endDate } = this.data;
+    const { startDate, startTime, endDate, endTime } = this.data;
     const diff = dateUtil.daysBetween(startDate, endDate);
     const over = diff > SPAN_LIMIT_DAYS;
     let spanText = '同一天内';
     if (diff === 1) spanText = '跨 2 天';
     else if (diff > 1) spanText = '跨 ' + (diff + 1) + ' 天';
     if (over) spanText = '跨 ' + (diff + 1) + ' 天，超过 ' + SPAN_LIMIT_DAYS + ' 天上限';
-    this.setData({ spanText, spanWarn: over });
+
+    // 行内警告：文案在 JS 里算好，WXML 只做插值
+    let rangeWarnText = '';
+    if (tsOf(endDate, endTime) <= tsOf(startDate, startTime)) {
+      rangeWarnText = '结束时间需晚于开始时间';
+    } else if (over) {
+      rangeWarnText = '时间跨度不能超过 ' + SPAN_LIMIT_DAYS + ' 天';
+    }
+
+    this.setData({ spanText, spanWarn: over || !!rangeWarnText, rangeWarnText });
   },
 
   onPickType(e) {
@@ -145,24 +148,13 @@ Page({
       notePlaceholder: meta.placeholder,
     };
 
-    // 京外/请假天然跨天：结束日期若还停在同一天，自动延到次日；
-    // 京内出差一般是当天来回，切到它时把结束日期收回同一天。
-    const isLong = value === 'trip' || value === 'leave';
-    const { startDate, endDate, startTime, endTime } = this.data;
-
-    if (isLong && endDate === startDate) {
-      const next = dateUtil.addDays(startDate, 1);
-      patch.endDate = next;
-      patch.endDateText = dateUtil.dayLabel(next);
-    } else if (!isLong && endDate !== startDate) {
-      patch.endDate = startDate;
-      patch.endDateText = dateUtil.dayLabel(startDate);
-      // 收回同一天后，结束时刻可能反而早于开始时刻，顺延一小时
-      if (tsOf(startDate, endTime) <= tsOf(startDate, startTime)) {
-        patch.endTime = bumpHour(startTime);
-      }
-    }
-
+    // 只改去向本身，**不碰时间段**。
+    //
+    // 早先这里有一段联动：切到「京外/请假」自动把结束日期延到次日，切到「京内」
+    // 自动把结束日期收回同一天。本意是省一步操作，但副作用很糟——
+    // 用户先用「连续 5 天」把日期铺好，再点一下「京内出差」，那 5 天会被硬缩成 1 天，
+    // 看起来完全像出了 bug。所以整段去掉，时间段改为完全手动。
+    // 非法区间（结束早于开始）由 refreshSpan 实时提示，提交时再拦一次。
     this.setData(patch);
     this.refreshSpan();
     this.refreshQuickActive();
@@ -170,46 +162,33 @@ Page({
     this.refreshNoteHistory();
   },
 
+  // 下面四个改动「时间段」的方法都只改自己被改的那一个字段，
+  // 不再顺手调整对方（「改 A 导致 B 也变」正是用户困惑的来源）。
+  // 顺序问题由 refreshSpan 的实时提示 + 提交校验来兜。
+
   onStartDateChange(e) {
     const startDate = e.detail.value;
-    const patch = { startDate, startDateText: dateUtil.dayLabel(startDate) };
-    // 结束日期不能早于开始日期，跟着挪
-    if (this.data.endDate < startDate) {
-      patch.endDate = startDate;
-      patch.endDateText = dateUtil.dayLabel(startDate);
-    }
-    this.setData(patch);
+    this.setData({ startDate, startDateText: dateUtil.dayLabel(startDate) });
     this.refreshSpan();
     this.refreshQuickActive();
   },
 
   onStartTimeChange(e) {
-    const startTime = e.detail.value;
-    const patch = { startTime };
-    // 同一天内结束必须晚于开始，否则顺延一小时
-    if (this.data.endDate === this.data.startDate) {
-      if (tsOf(this.data.endDate, this.data.endTime) <= tsOf(this.data.startDate, startTime)) {
-        patch.endTime = bumpHour(startTime);
-      }
-    }
-    this.setData(patch);
+    this.setData({ startTime: e.detail.value });
+    this.refreshSpan();
     this.refreshQuickActive();
   },
 
   onEndDateChange(e) {
     const endDate = e.detail.value;
-    const patch = { endDate, endDateText: dateUtil.dayLabel(endDate) };
-    if (endDate < this.data.startDate) {
-      patch.startDate = endDate;
-      patch.startDateText = dateUtil.dayLabel(endDate);
-    }
-    this.setData(patch);
+    this.setData({ endDate, endDateText: dateUtil.dayLabel(endDate) });
     this.refreshSpan();
     this.refreshQuickActive();
   },
 
   onEndTimeChange(e) {
     this.setData({ endTime: e.detail.value });
+    this.refreshSpan();
     this.refreshQuickActive();
   },
 
@@ -315,8 +294,22 @@ Page({
 
   async submit() {
     if (this.data.submitting) return;
+    // 未认领不再挡在页面入口（小程序审核要求：打开就能看到核心功能），
+    // 改在「点保存」这一刻拦。用 showModal 而不是 toast——
+    // 既要说明为什么不能提交，也要给一条直接去认领的路；
+    // 选「继续填写」时页面数据不丢，用户可以填完再回去认领。
     if (!this.data.joined) {
-      wx.showToast({ title: '请先认领身份', icon: 'none' });
+      const res = await new Promise((resolve) => {
+        wx.showModal({
+          title: '还没有认领身份',
+          content: '填写的内容还在，不会丢。请先到「我的」里从部门名册中认领自己，再回来提交。',
+          confirmText: '去认领',
+          cancelText: '继续填写',
+          success: resolve,
+          fail: () => resolve({ confirm: false }),
+        });
+      });
+      if (res.confirm) this.goMine();
       return;
     }
 

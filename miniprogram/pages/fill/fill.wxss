@@ -15,28 +15,48 @@
   font-size: 30rpx;
 }
 
-/* ---------- 未认领 ---------- */
+/* ---------- 未认领：只在顶部提示，不挡住填写界面 ---------- */
+/* 原来是一张大白卡片，未认领时把下面的表单整个挡掉。
+   小程序审核要求打开就能看到核心功能，所以改成一条紧凑的横幅提示，
+   真正的拦截放在点「保存」那一刻（见 fill.js 的 submit）。 */
 
-.join-card {
-  background: #ffffff;
-  border-radius: 20rpx;
-  padding: 48rpx 32rpx;
-  text-align: center;
+.join-bar {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  background: #e6f1fb;
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 24rpx;
+}
+
+.join-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .join-title {
   display: block;
-  font-size: 34rpx;
+  font-size: 28rpx;
   font-weight: 500;
-  margin-bottom: 16rpx;
+  color: #0c447c;
 }
 
 .join-desc {
   display: block;
   font-size: 24rpx;
-  color: #6b6b70;
-  line-height: 1.6;
-  margin-bottom: 40rpx;
+  color: #2d5f96;
+  line-height: 1.5;
+  margin-top: 6rpx;
+}
+
+.join-btn {
+  flex: none;
+  padding: 12rpx 26rpx;
+  border-radius: 100rpx;
+  background: #185fa5;
+  color: #ffffff;
+  font-size: 26rpx;
 }
 
 /* ---------- 去向 ---------- */
@@ -218,6 +238,15 @@
 
 .hint-text.warn {
   color: #e34d59;
+}
+
+/* 区间非法的行内提示（结束早于开始 / 跨度过大）。
+   时间段联动去掉之后，这是用户唯一的即时反馈——
+   否则要一路填到点「保存」才被告知区间不对。 */
+.range-warn {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #c0392b;
 }
 
 .pick-wrap {

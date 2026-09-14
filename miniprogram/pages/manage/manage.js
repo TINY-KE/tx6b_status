@@ -213,7 +213,9 @@ Page({
   async toggleAdmin(e) {
     const id = e.currentTarget.dataset.id;
     const name = e.currentTarget.dataset.name;
-    const isAdmin = e.currentTarget.dataset.admin;
+    // dataset 里的值会被转成字符串，直接 `!isAdmin` 两个方向都是 false
+    //（!"true" 和 !"false" 都为 false），必须先显式比对。
+    const isAdmin = String(e.currentTarget.dataset.admin) === 'true';
     const next = !isAdmin;
     const res = await new Promise((resolve) => {
       wx.showModal({
@@ -242,6 +244,48 @@ Page({
     } catch (err) {
       console.error('设置管理员失败', err);
       wx.showToast({ title: '操作失败', icon: 'none' });
+    } finally {
+      wx.hideLoading();
+    }
+  },
+
+  // 一次性清理：把除自己以外的管理员标记全部取消。
+  // 用于修复早期「第一个认领者」判断错误留下的存量数据。
+  async fixAdmins() {
+    const res = await new Promise((resolve) => {
+      wx.showModal({
+        title: '修正管理员标记',
+        content: '将取消除你以外所有人的管理员标记，只保留你一个管理员。如果部门里还有其他管理员，修正后需要手动加回来。确定继续吗？',
+        confirmText: '修正',
+        confirmColor: '#e34d59',
+        success: resolve,
+        fail: () => resolve({ confirm: false }),
+      });
+    });
+    if (!res.confirm) return;
+
+    wx.showLoading({ title: '处理中' });
+    try {
+      const { result } = await wx.cloud.callFunction({
+        name: 'staff',
+        data: { action: 'fixAdmins' },
+      });
+      if (result && result.success) {
+        wx.showModal({
+          title: '已修正',
+          content: result.removed
+            ? '已取消 ' + result.removed + ' 人的管理员标记，只保留你自己。'
+            : '没有需要修正的记录。',
+          showCancel: false,
+          confirmText: '好的',
+        });
+        this.loadList();
+      } else {
+        wx.showToast({ title: (result && result.message) || '修正失败', icon: 'none' });
+      }
+    } catch (err) {
+      console.error('修正管理员失败', err);
+      wx.showToast({ title: '修正失败', icon: 'none' });
     } finally {
       wx.hideLoading();
     }
