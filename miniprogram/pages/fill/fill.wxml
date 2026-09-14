@@ -135,6 +135,6 @@
     </view>
   </view>
 
-  <view class="bottom-tip">保存后，「在位看板」会立即同步</view>
+  <!-- <view class="bottom-tip">保存后，「在位看板」会立即同步</view> -->
 
 </view>

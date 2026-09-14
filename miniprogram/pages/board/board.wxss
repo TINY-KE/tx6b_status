@@ -22,13 +22,13 @@
 }
 
 .join-tip-text {
-  font-size: 26rpx;
+  font-size: 30rpx;
   color: #854f0b;
   flex: 1;
 }
 
 .join-tip-btn {
-  font-size: 26rpx;
+  font-size: 30rpx;
   font-weight: 500;
   color: #185fa5;
   padding-left: 16rpx;
@@ -49,12 +49,12 @@
 }
 
 .date-title {
-  font-size: 36rpx;
+  font-size: 40rpx;
   font-weight: 500;
 }
 
 .me-name {
-  font-size: 28rpx;
+  font-size: 32rpx;
   color: #6b6b70;
 }
 
@@ -70,7 +70,7 @@
   padding: 14rpx 28rpx;
   margin-right: 18rpx;
   border-radius: 100rpx;
-  font-size: 28rpx;
+  font-size: 32rpx;
   color: #6b6b70;
   background: #f1efe8;
 }
@@ -87,7 +87,7 @@
 }
 
 .screen-tab { 
-  font-size: 38rpx;
+  font-size: 42rpx;
   color: #9a9aa0;
   padding-bottom: 14rpx;
   border-bottom: 4rpx solid transparent;
@@ -111,13 +111,13 @@
 
 .stat-num {
   display: block;
-  font-size: 38rpx;
+  font-size: 42rpx;
   font-weight: 500;
   line-height: 1.2;
 }
 
 .stat-label {
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #9a9aa0;
 }
 
@@ -167,9 +167,11 @@
   z-index: 2;
 }
 
-/* 姓名列：字号放大后 3 个汉字约需 84rpx，留出余量 */
+/* 姓名列。字号升到 32rpx 后，3 字姓名（96rpx + 胶囊内边距 24rpx = 120rpx）
+   会超出原来的 112rpx 被省略号截断，所以加宽到 128rpx。
+   代价是右侧时间轴少 16rpx（19 格每格少 0.84rpx，肉眼无感）。 */
 .name-col {
-  width: 112rpx;
+  width: 128rpx;
   flex: none;
 }
 
@@ -181,7 +183,12 @@
 
 .axis-label {
   position: absolute;
-  font-size: 24rpx;
+  /* 字号升到 28rpx 后，默认行高（≈1.2 倍 = 34rpx）正好顶满容器在部分机型上会溢出。
+     这里给死行高让它垂直居中，并显式 top:0 —— 绝对定位不写 top 时会回落「静态位置」，
+     不同机型算出来的基线不一致。 */
+  top: 0;
+  line-height: 34rpx;
+  font-size: 28rpx;
   color: #9a9aa0;
 }
 
@@ -206,11 +213,27 @@
   border-bottom: 1rpx solid rgba(0, 0, 0, 0.05);
 }
 
+/* 姓名外面套一圈，看起来像个头像。
+   配色直接沿用「我的」页面的 .avatar（浅蓝底 #e6f1fb + 深蓝字 #0c447c），
+   两处观感一致，也避免再引入一个新色系——
+   绿/黄/红/灰已经被四种状态占用了，姓名另起一套颜色会和状态混淆。
+   内边距取 12rpx：3 个汉字（84rpx）+ 左右 24rpx = 108rpx，
+   仍放得进 112rpx 的姓名列；再宽就会把右侧时间轴挤掉。
+   nowrap + ellipsis 是兜底，防 4 字姓名（复姓）撑破——正常不会触发。 */
 .pname {
-  display: block;
-  font-size: 28rpx;
+  display: inline-block;
+  max-width: 100%;
+  padding: 8rpx 12rpx;
+  border-radius: 100rpx;
+  background: #e6f1fb;
+  color: #0c447c;
+  font-size: 32rpx;
   font-weight: 500;
   line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
 .right-col {
@@ -261,7 +284,7 @@
   margin-top: 8rpx;
   padding: 2rpx 10rpx;
   border-radius: 6rpx;
-  font-size: 24rpx;
+  font-size: 28rpx;
   white-space: nowrap;
   max-width: 100%;
   vertical-align: middle;
@@ -312,7 +335,7 @@
 
 .recent-col {
   flex: 1;
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #9a9aa0;
   text-align: center;
 }
@@ -368,29 +391,32 @@
 
 .list-foot {
   text-align: center;
-  font-size: 26rpx;
+  font-size: 30rpx;
   color: #9a9aa0;
   padding: 24rpx 0;
 }
 
+/* 图例。原先在列表末尾、padding 底部留 40rpx 收尾；
+   现在挪到顶部 header 里（不随列表滚动），所以只留左右和一点下边距。
+   4 项按 24rpx 字号排一行约 480rpx，750rpx 宽放得下，不需要换行。 */
 .legend {
   display: flex;
   flex-wrap: wrap;
   gap: 20rpx;
-  padding: 24rpx 24rpx 40rpx;
+  padding: 0 24rpx 16rpx;
 }
 
 .lg-item {
   display: flex;
   align-items: center;
   gap: 8rpx;
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #6b6b70;
 }
 
 .legend-text {
   padding: 24rpx;
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #9a9aa0;
   line-height: 1.6;
 }

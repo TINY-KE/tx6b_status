@@ -29,7 +29,7 @@ page {
   background-color: var(--page-bg);
   color: var(--text-1);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Helvetica Neue', sans-serif;
-  font-size: 32rpx;
+  font-size: 36rpx;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -54,7 +54,7 @@ text {
 }
 
 .sec-title {
-  font-size: 34rpx;
+  font-size: 38rpx;
   font-weight: 500;
   color: var(--text-1);
   margin-bottom: 16rpx;
@@ -62,12 +62,12 @@ text {
 
 .muted {
   color: var(--text-2);
-  font-size: 28rpx;
+  font-size: 32rpx;
 }
 
 .hint-text {
   color: var(--text-3);
-  font-size: 28rpx;
+  font-size: 32rpx;
   line-height: 1.6;
 }
 
@@ -81,14 +81,14 @@ text {
   padding: 80rpx 0;
   text-align: center;
   color: var(--text-3);
-  font-size: 30rpx;
+  font-size: 34rpx;
 }
 
 .btn-primary {
   background: var(--brand);
   color: #ffffff;
   border-radius: 12rpx;
-  font-size: 34rpx;
+  font-size: 38rpx;
   font-weight: 500;
   line-height: 96rpx;
   text-align: center;
@@ -103,7 +103,7 @@ text {
   color: var(--brand);
   border: 1rpx solid var(--brand);
   border-radius: 12rpx;
-  font-size: 32rpx;
+  font-size: 36rpx;
   line-height: 84rpx;
   text-align: center;
 }

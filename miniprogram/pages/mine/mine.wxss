@@ -25,7 +25,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 40rpx;
+  font-size: 44rpx;
   font-weight: 500;
   flex: none;
   margin-right: 24rpx;
@@ -43,12 +43,12 @@
 }
 
 .pname {
-  font-size: 38rpx;
+  font-size: 42rpx;
   font-weight: 500;
 }
 
 .badge {
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #185fa5;
   background: #e6f1fb;
   padding: 2rpx 12rpx;
@@ -69,17 +69,17 @@
 }
 
 .cell-title {
-  font-size: 34rpx;
+  font-size: 38rpx;
   flex: 1;
 }
 
 .cell-note {
-  font-size: 28rpx;
+  font-size: 32rpx;
   color: #9a9aa0;
 }
 
 .arrow {
-  font-size: 36rpx;
+  font-size: 40rpx;
   color: #c4c4c8;
   padding-left: 12rpx;
 }
@@ -96,13 +96,13 @@
 .field-label {
   width: 110rpx;
   flex: none;
-  font-size: 32rpx;
+  font-size: 36rpx;
   color: #6b6b70;
 }
 
 .field-input {
   flex: 1;
-  font-size: 34rpx;
+  font-size: 38rpx;
 }
 
 .field-picker {
@@ -133,7 +133,7 @@
 
 .claim-phone-label {
   flex: none;
-  font-size: 30rpx;
+  font-size: 34rpx;
   color: #6b6b70;
 }
 
@@ -141,7 +141,7 @@
   flex: 1;
   min-width: 0;
   padding: 20rpx 0;
-  font-size: 30rpx;
+  font-size: 34rpx;
 }
 
 .claim-card {
@@ -159,7 +159,7 @@
 
 .claim-title {
   display: block;
-  font-size: 36rpx;
+  font-size: 40rpx;
   font-weight: 500;
 }
 
@@ -168,13 +168,13 @@
 }
 
 .claim-cancel {
-  font-size: 30rpx;
+  font-size: 34rpx;
   color: #9a9aa0;
 }
 
 .claim-desc {
   display: block;
-  font-size: 28rpx;
+  font-size: 32rpx;
   color: #6b6b70;
   line-height: 1.6;
   margin-top: 10rpx;
@@ -184,7 +184,7 @@
   background: #f5f5f7;
   border-radius: 10rpx;
   padding: 20rpx;
-  font-size: 30rpx;
+  font-size: 34rpx;
   margin: 24rpx 0 8rpx;
 }
 
@@ -197,18 +197,18 @@
 }
 
 .ci-name {
-  font-size: 34rpx;
+  font-size: 38rpx;
   font-weight: 500;
 }
 
 .ci-dept {
-  font-size: 28rpx;
+  font-size: 32rpx;
   color: #6b6b70;
 }
 
 .foot-tip {
   text-align: center;
-  font-size: 28rpx;
+  font-size: 32rpx;
   color: #9a9aa0;
   padding: 40rpx 0;
 }

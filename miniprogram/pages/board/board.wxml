@@ -8,7 +8,7 @@
   <view class="header">
     <view class="title-row">
       <text class="date-title">{{dateTitle}}</text>
-      <text class="me-name" wx:if="{{joined}}">{{meName}}</text>
+      <!-- <text class="me-name" wx:if="{{joined}}">{{meName}}</text> -->
     </view>
 
     <scroll-view class="dept-bar" scroll-x enable-flex show-scrollbar="{{false}}">
@@ -44,6 +44,16 @@
         <text class="stat-label">请假</text>
       </view>
     </view>
+
+    <!-- 图例固定在这里（header 不随列表滚动）。
+         原先放在列表末尾，人一多就要滚到底才看得到，等于没有图例。
+         四个色点两屏共用，所以只留这一份。 -->
+    <!-- <view class="legend">
+      <view class="lg-item"><view class="dot d-office"></view><text>在岗</text></view>
+      <view class="lg-item"><view class="dot d-meeting"></view><text>京内出差</text></view>
+      <view class="lg-item"><view class="dot d-trip"></view><text>京外出差</text></view>
+      <view class="lg-item"><view class="dot d-leave"></view><text>请假</text></view>
+    </view> -->
   </view>
 
   <swiper class="swiper" current="{{screenIndex}}" bindchange="onSwiperChange" duration="{{200}}">
@@ -64,7 +74,13 @@
         </view>
 
         <view class="prow" wx:for="{{todayPeople}}" wx:key="key">
-          <view class="name-col">
+          <view
+            class="name-col"
+            data-name="{{item.name}}"
+            data-phone="{{item.phone}}"
+            data-joined="{{item.joined}}"
+            bindtap="onTapName"
+          >
             <text class="pname">{{item.name}}</text>
           </view>
           <view class="right-col">
@@ -81,12 +97,7 @@
         <view class="empty" wx:if="{{errorMsg}}">{{errorMsg}}</view>
         <view class="empty" wx:if="{{!loading && !errorMsg && todayPeople.length === 0}}">该科室暂无人员</view>
 
-        <view class="legend">
-          <view class="lg-item"><view class="dot d-office"></view><text>在岗</text></view>
-          <view class="lg-item"><view class="dot d-meeting"></view><text>京内出差</text></view>
-          <view class="lg-item"><view class="dot d-trip"></view><text>京外出差</text></view>
-          <view class="lg-item"><view class="dot d-leave"></view><text>请假</text></view>
-        </view>
+        <!-- 图例已移到顶部 header，不再放在列表末尾（人一多就看不到） -->
 
       </scroll-view>
     </swiper-item>
@@ -102,7 +113,13 @@
         </view>
 
         <view class="prow prow-recent" wx:for="{{recentPeople}}" wx:key="key">
-          <view class="name-col">
+          <view
+            class="name-col"
+            data-name="{{item.name}}"
+            data-phone="{{item.phone}}"
+            data-joined="{{item.joined}}"
+            bindtap="onTapName"
+          >
             <text class="pname">{{item.name}}</text>
           </view>
           <view class="recent-cols">
@@ -122,13 +139,8 @@
 
         <view class="empty" wx:if="{{recentLoaded && recentPeople.length === 0}}">该科室暂无人员</view>
         <view class="empty" wx:if="{{!recentLoaded}}">加载中…</view>
-        <view class="legend">
-          <view class="lg-item"><view class="dot d-office"></view><text>在岗</text></view>
-          <view class="lg-item"><view class="dot d-meeting"></view><text>京内出差</text></view>
-          <view class="lg-item"><view class="dot d-trip"></view><text>京外出差</text></view>
-          <view class="lg-item"><view class="dot d-leave"></view><text>请假</text></view>
-          <view class="legend-text">每格为一天 8:30-18:00 的状态分布：同一天内按时间分段着色，色块宽度即该段时间占比（8:30 在左、18:00 在右）</view>
-        </view>
+
+        <!-- 图例已移到顶部 header，不再放在列表末尾（人一多就看不到） -->
 
       </scroll-view>
     </swiper-item>

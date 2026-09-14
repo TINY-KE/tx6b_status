@@ -8,11 +8,11 @@
 /* 本页比其它页字号收一档：填写项多（去向 / 日期 / 时刻 / 快捷 / 备注 / 记录），
    字号小一点更好扫，也不至于一行挤不下。覆盖 app.wxss 里的同名全局类。 */
 .sec-title {
-  font-size: 30rpx;
+  font-size: 34rpx;
 }
 
 .btn-primary {
-  font-size: 30rpx;
+  font-size: 34rpx;
 }
 
 /* ---------- 未认领：只在顶部提示，不挡住填写界面 ---------- */
@@ -37,14 +37,14 @@
 
 .join-title {
   display: block;
-  font-size: 28rpx;
+  font-size: 32rpx;
   font-weight: 500;
   color: #0c447c;
 }
 
 .join-desc {
   display: block;
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #2d5f96;
   line-height: 1.5;
   margin-top: 6rpx;
@@ -56,7 +56,7 @@
   border-radius: 100rpx;
   background: #185fa5;
   color: #ffffff;
-  font-size: 26rpx;
+  font-size: 30rpx;
 }
 
 /* ---------- 去向 ---------- */
@@ -75,7 +75,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28rpx;
+  font-size: 32rpx;
   font-weight: 500;
 }
 
@@ -123,7 +123,7 @@
 }
 
 .quick-label {
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #9a9aa0;
   margin-bottom: 14rpx;
 }
@@ -137,7 +137,7 @@
 .quick-btn {
   flex: 1;
   text-align: center;
-  font-size: 24rpx;
+  font-size: 28rpx;
   padding: 14rpx 0;
   border-radius: 10rpx;
   background: #f1efe8;
@@ -172,7 +172,7 @@
 }
 
 .streak-label {
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #6b6b70;
 }
 
@@ -181,7 +181,7 @@
 }
 
 .streak-num {
-  font-size: 30rpx;
+  font-size: 34rpx;
   font-weight: 500;
   min-width: 44rpx;
   text-align: center;
@@ -193,7 +193,7 @@
   border-radius: 8rpx;
   background: #ffffff;
   color: #1c1c1e;
-  font-size: 30rpx;
+  font-size: 34rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -206,7 +206,7 @@
 
 .streak-range {
   margin-left: auto;
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #9a9aa0;
 }
 
@@ -217,11 +217,11 @@
   margin-bottom: 16rpx;
 }
 
-/* 「开始 / 结束」两个字：24rpx 字宽约 48rpx，留 76rpx 有余量不换行 */
+/* 「开始 / 结束」两个字：28rpx 时两字约 56rpx，留在 76rpx 里还有余量不换行 */
 .range-label {
   flex: none;
   width: 76rpx;
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #6b6b70;
 }
 
@@ -245,7 +245,7 @@
    否则要一路填到点「保存」才被告知区间不对。 */
 .range-warn {
   margin-top: 8rpx;
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #c0392b;
 }
 
@@ -255,7 +255,7 @@
 
 .pick-cell {
   text-align: center;
-  font-size: 30rpx;
+  font-size: 34rpx;
   font-weight: 500;
   padding: 20rpx 0;
   border-radius: 10rpx;
@@ -268,7 +268,7 @@
   background: #f5f5f7;
   border-radius: 10rpx;
   padding: 20rpx;
-  font-size: 26rpx;
+  font-size: 30rpx;
 }
 
 /* 历史备注：点一下直接填入，省掉重复打字。
@@ -278,7 +278,7 @@
 }
 
 .note-history-tip {
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #9a9aa0;
   margin-bottom: 12rpx;
 }
@@ -293,7 +293,7 @@
 .note-chip {
   padding: 10rpx 22rpx;
   border-radius: 100rpx;
-  font-size: 26rpx;
+  font-size: 30rpx;
   color: #4a4a4f;
   background: #f1efe8;
   max-width: 100%;
@@ -331,7 +331,7 @@
 
 .bottom-tip {
   text-align: center;
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #9a9aa0;
   padding-bottom: 40rpx;
 }
@@ -357,7 +357,7 @@
 }
 
 .rec-tag {
-  font-size: 24rpx;
+  font-size: 28rpx;
   padding: 2rpx 10rpx;
   border-radius: 6rpx;
 }
@@ -386,26 +386,26 @@
 }
 
 .rec-range {
-  font-size: 26rpx;
+  font-size: 30rpx;
   font-weight: 500;
 }
 
 .rec-date {
   display: block;
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #9a9aa0;
   margin-top: 6rpx;
 }
 
 .rec-note {
   display: block;
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #6b6b70;
   margin-top: 4rpx;
 }
 
 .rec-del {
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: #e34d59;
   padding-left: 24rpx;
 }

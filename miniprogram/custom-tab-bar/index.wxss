@@ -31,7 +31,7 @@
 }
 
 .tab-text {
-  font-size: 24rpx;
+  font-size: 28rpx;
   line-height: 1.2;
   color: #8a8a8e;
 }

@@ -149,6 +149,8 @@ Page({
     return {
       key: p.openid || 'x' + p.name,
       name: p.name,
+      // 点姓名要拨号，所以带上电话（本人认领时填的）
+      phone: p.phone || '',
       joined: p.joined,
       confirmed: p.confirmed,
       dotClasses,
@@ -219,6 +221,7 @@ Page({
       const people = (result.people || []).map((p) => ({
         key: p.openid || 'x' + p.name,
         name: p.name,
+        phone: p.phone || '',
         joined: p.joined,
         initial: (p.name || '').slice(0, 1),
         days: p.days.map((day) => {
@@ -248,6 +251,54 @@ Page({
     // 未填与未确认在岗一律按在岗显示
     if (!type) return 'bar-office';
     return 'bar-' + type;
+  },
+
+  // 点看板上的姓名 → 给这位同事打电话。
+  // 电话是本人认领时自己填的（见「我的」页），所以有「未认领」「已认领但没填」两种情况，
+  // 必须分别给提示——点了没反应会让人以为功能坏了。
+  onTapName(e) {
+    const ds = e.currentTarget.dataset;
+    const name = ds.name || '';
+    const phone = String(ds.phone || '').trim();
+    // dataset 里的值一律是字符串（"true"/"false"），不能当真值用
+    const joined = String(ds.joined) === 'true';
+
+    if (!joined) {
+      wx.showModal({
+        title: '无法拨打电话',
+        content: name + ' 还没有认领身份。等他认领并填写电话号码后就能拨打。',
+        showCancel: false,
+        confirmText: '好的',
+      });
+      return;
+    }
+    if (!phone) {
+      wx.showModal({
+        title: '暂无电话号码',
+        content: name + ' 还没有填写电话号码，可以在「我的 → 编辑我的资料」里补充。',
+        showCancel: false,
+        confirmText: '好的',
+      });
+      return;
+    }
+
+    wx.showModal({
+      title: '拨打电话',
+      content: '确定要给 ' + name + ' 拨打电话吗？',
+      confirmText: '拨打',
+      cancelText: '取消',
+      success: (res) => {
+        if (!res.confirm) return;
+        wx.makePhoneCall({
+          phoneNumber: phone,
+          fail: (err) => {
+            // 用户自己点了取消不算失败，别弹错误提示
+            if (err && /cancel/i.test(err.errMsg || '')) return;
+            wx.showToast({ title: '拨号失败', icon: 'none' });
+          },
+        });
+      },
+    });
   },
 
   onDeptChange(e) {

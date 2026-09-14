@@ -280,6 +280,9 @@ async function collectDay(dept, dateStr) {
       openid: s.openid || '',
       name: s.name || '',
       dept: s.dept || '',
+      // 电话由本人认领时填、存在 staff 记录上；看板点姓名要拨号，所以带出来。
+      // 未认领的人没有电话，前端据此提示「还没有认领身份」。
+      phone: s.phone || '',
       joined,
       confirmed,
       dots,
@@ -393,6 +396,7 @@ async function rangeBoard(event) {
       openid: s.openid || '',
       name: s.name || '',
       dept: s.dept || '',
+      phone: s.phone || '',
       joined,
       days,
     };
