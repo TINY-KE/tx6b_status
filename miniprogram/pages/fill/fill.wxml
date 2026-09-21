@@ -112,10 +112,37 @@
     </view>
   </view>
 
-  <view class="card">
+  <!-- 备注卡：没选去向时整块不渲染。
+       否则会先冒出一个空的「备注（必填）」，用户以为要自己写点什么，
+       而实际上备注的含义完全取决于去向（出差=出差地、请假=请假事由）。
+       选了去向再来填，标题也才有意义。 -->
+  <view class="card" wx:if="{{type}}">
     <view class="sec-title">{{noteTitle}}</view>
+
+    <!-- 请假事由只能点选（只在选了「请假」时出现）：
+         手打容易写出「年假 / 年休假 / 公休」这类同义不同字，看板和统计里就没法归并，
+         所以请假时**不给输入框**，事由只能从下面这 7 项里选一个（见 utils/note.js）。
+         点一下选中、再点一下取消；提交时必须选中一项，否则提示「请选择请假事由」。 -->
+    <view class="reason-box" wx:if="{{isLeave}}">
+      <view class="reason-tip">点一下选择（请假事由不支持自己填写）</view>
+      <view class="reason-chips">
+        <view
+          class="reason-chip {{item.active}}"
+          wx:for="{{leaveReasons}}"
+          wx:key="text"
+          data-text="{{item.text}}"
+          bindtap="onPickReason"
+        >{{item.text}}</view>
+      </view>
+    </view>
+
+    <!-- 出差地的输入框 + 历史点选。
+         请假时整块不渲染：事由只能点选，没有自由文字。
+         历史记录也只服务出差（noteHistory 对请假返回空），
+         所以 note-history 这一块在请假时天然是空的。 -->
     <input
       class="note-input"
+      wx:if="{{!isLeave}}"
       placeholder="{{notePlaceholder}}"
       value="{{note}}"
       maxlength="50"

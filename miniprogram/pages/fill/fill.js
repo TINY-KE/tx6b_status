@@ -73,6 +73,10 @@ Page({
     note: '',
     noteTitle: noteUtil.noteMeta('').title,
     notePlaceholder: noteUtil.noteMeta('').placeholder,
+    // 请假事由的固定选项（事假/病假/年休假/…），只有选了「请假」才显示。
+    // active 在 JS 里算好，WXML 只做插值——和 quickButtons 同一套写法。
+    isLeave: false,
+    leaveReasons: [],
     noteHistory: [],
     myList: [],
     submitting: false,
@@ -91,6 +95,7 @@ Page({
 
     this.setData({
       types,
+      leaveReasons: noteUtil.LEAVE_REASONS.map((t) => ({ text: t, active: '' })),
       quickButtons: [
         { kind: 'am', label: '今天上午', active: '' },
         { kind: 'pm', label: '今天下午', active: '' },
@@ -153,9 +158,20 @@ Page({
     );
     // 备注标题跟着去向走：出差=出差地，请假=请假事由
     const meta = noteUtil.noteMeta(value);
+    // 切换去向时，原来那笔备注在新去向里可能不合法，不合法就当场清掉——
+    // 否则会留下一个「改不掉又提交不了」的值（请假时输入框根本不存在）。
+    //   切到请假：只有 7 个固定事由算合法，手打的出差地一律清掉
+    //   切离请假：原本选的「年休假」当出差地是错的，也要清掉
+    // 其余情况保留用户已经写好的文字。
+    const prev = this.data.note;
+    const isReason = noteUtil.isLeaveReason(prev);
+    const note = (value === 'leave') === isReason ? prev : '';
     const patch = {
       types,
       type: value,
+      // 只有请假有固定事由选项；出差不带（地名没有可选集合）
+      isLeave: value === 'leave',
+      note,
       noteTitle: meta.title,
       notePlaceholder: meta.placeholder,
     };
@@ -172,6 +188,8 @@ Page({
     this.refreshQuickActive();
     // 换了去向，历史备注也要换一组（出差地 ⇄ 请假事由 不混用）
     this.refreshNoteHistory();
+    // 已经填过「年休假」再切回请假时，对应的那个选项要跟着亮起来
+    this.refreshReasonActive();
   },
 
   // 下面四个改动「时间段」的方法都只改自己被改的那一个字段，
@@ -204,8 +222,32 @@ Page({
     this.refreshQuickActive();
   },
 
+  // 出差地的输入框。请假时这个框不渲染（事由只能点选），
+  // 这里仍加一道兜底：万一有残留的输入事件飘进来，也不能把请假事由改写成自由文字。
   onNoteChange(e) {
+    if (this.data.isLeave) return;
     this.setData({ note: e.detail.value });
+    this.refreshReasonActive();
+  },
+
+  // 点请假事由选项 → 记进备注（就是这条请假记录的事由）。
+  // 再点一下取消，方便改了主意又不想选（不选提交时会被拦下）。
+  onPickReason(e) {
+    const text = e.currentTarget.dataset.text;
+    const note = this.data.note === text ? '' : text;
+    this.setData({ note });
+    this.refreshReasonActive();
+  },
+
+  // 当前备注正好等于某个固定选项时高亮它。
+  // 只有完全相等才算——所以请假事由永远只会是这 7 项之一。
+  refreshReasonActive() {
+    const note = String(this.data.note || '').trim();
+    this.setData({
+      leaveReasons: this.data.leaveReasons.map((r) =>
+        Object.assign({}, r, { active: r.text === note ? 'on' : '' })
+      ),
+    });
   },
 
   // 快捷选项：一次写好「日期 + 时刻」四个字段。
@@ -364,10 +406,14 @@ Page({
       wx.showToast({ title: '请先选择去向', icon: 'none' });
       return;
     }
-    // 备注已是必填：出差填「出差地」、请假填「请假事由」。
+    // 备注是必填的：出差填「出差地」（自由文字，非空即可）、
+    // 请假选「请假事由」（只能是 7 个固定选项之一）。
+    // 规则统一走 noteUtil.isValidNote()，前端提示与云函数校验对齐同一套口径。
     // 提示语带上具体名字，比笼统的「请填写备注」更容易让人知道缺什么。
-    if (!note || !note.trim()) {
-      wx.showToast({ title: '请填写' + noteUtil.noteMeta(type).label, icon: 'none' });
+    if (!noteUtil.isValidNote(type, note)) {
+      // 请假是点选项、出差是打字，动词跟着交互方式走（「请选择」/「请填写」）
+      const verb = type === 'leave' ? '请选择' : '请填写';
+      wx.showToast({ title: verb + noteUtil.noteMeta(type).label, icon: 'none' });
       return;
     }
     if (tsOf(endDate, endTime) <= tsOf(startDate, startTime)) {
@@ -394,7 +440,10 @@ Page({
       const { result } = await wx.cloud.callFunction({ name: 'presence', data: payload });
       if (result && result.success) {
         wx.showToast({ title: '已更新', icon: 'success' });
+        // 备注清空后要把选项的高亮一并撤掉，
+        // 否则输入框已空、选项还亮着，看起来像还选着一个事由。
         this.setData({ note: '' });
+        this.refreshReasonActive();
         // 直接用写接口回传的列表，省掉一次云函数往返
         this.applyMyList(result.list);
       } else {
@@ -427,10 +476,15 @@ Page({
   },
 
   // 按当前去向类型，从「我的记录」里提出同类备注作为可点选项。
-  // 出差（京内/京外）合并成一组、请假单独一组，口径见 utils/note.js。
+  // 只有出差有历史（京内 + 京外合并成一组）：请假事由是 7 个固定选项、
+  // 不接受自定义文字，所以不给历史——口径见 utils/note.js 的 noteHistory()。
   refreshNoteHistory() {
     this.setData({
-      noteHistory: noteUtil.noteHistory(this.data.myList, this.data.type),
+      noteHistory: noteUtil.noteHistory(
+        this.data.myList,
+        this.data.type,
+        noteUtil.HISTORY_LIMIT
+      ),
     });
   },
 

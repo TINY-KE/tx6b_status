@@ -12,6 +12,11 @@ const SLOT_COUNT = (DAY_END_MINUTES - DAY_START_MINUTES) / STEP_MINUTES; // 19
 
 const VALID_TYPES = ['office', 'meeting', 'trip', 'leave'];
 
+// 请假事由的固定取值域，必须与 miniprogram/utils/note.js 的 LEAVE_REASONS 保持一致
+// （小程序端不给输入框，事由只能从这 7 项里点选；服务端在这里再卡一次，
+// 防止旧版本客户端或直接调接口写进「年假 / 公休」这类同义不同字）。
+const LEAVE_REASONS = ['事假', '病假', '年休假', '探亲假', '婚假', '产假', '丧假'];
+
 // 单条记录的起止跨度上限（按日期差算）。出差最长按 30 天计。
 const SPAN_LIMIT_DAYS = 30;
 
@@ -508,14 +513,19 @@ async function saveRecords(event, openid) {
   if (!startTime || !endTime) return { success: false, message: '请选择时间段' };
   if (endDate < startDate) return { success: false, message: '结束日期不能早于开始日期' };
 
-  // 备注必填：出差填「出差地」、请假填「请假事由」。
+  // 备注必填：出差填「出差地」、请假选「请假事由」。
   // 前端已拦过一次，这里再拦是为了防止旧版本客户端或直接调接口漏过去。
   const noteText = (note || '').trim();
   if (!noteText) {
     return {
       success: false,
-      message: type === 'leave' ? '请填写请假事由' : '请填写出差地',
+      message: type === 'leave' ? '请选择请假事由' : '请填写出差地',
     };
+  }
+  // 请假事由只能是 7 个固定选项之一，不接受自定义文字：
+  // 否则「年假 / 年休假 / 公休」会各算一类，看板与统计都无法归并。
+  if (type === 'leave' && LEAVE_REASONS.indexOf(noteText) < 0) {
+    return { success: false, message: '请假事由请从选项中选择' };
   }
 
   // 跨度上限：防止把日期选成下个月之类的手滑
