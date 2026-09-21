@@ -5,6 +5,26 @@ const DEPT_KEY = 'presence_last_dept';
 const PAGE_STEP = 24; // 一次渲染多少人，避免 100 人一次性铺开卡顿
 const FALLBACK_DEPTS = ['1室', '2室', '3室', '4室', '部办'];
 
+// 区间视图定义：screenIndex(1~3) -> 视图。
+//   3/7：按「工作日」取列（走 date.js 的 isWorkday，跳过节假日、算上调休），
+//        用色条 + 分段渲染；
+//   M（一个月）：按「自然日」取 30 列，用每日一格的色块渲染——
+//        30 列放不下色条和备注，长假以「空心格」的形态留在月视图里
+//        （不填色只留描边：灰已被「请假」占用，同屏两种灰会被看成同一个状态）。
+// cloudKey 是传给 presence 云函数 range 的视图标识，也用作页面 data 的后缀
+// （cols3 / people3 / cols7 / ... / colsM / peopleM）。
+const RANGE_VIEWS = {
+  1: { cloudKey: '3', count: 3, workdaysOnly: true },
+  2: { cloudKey: '7', count: 7, workdaysOnly: true },
+  3: { cloudKey: 'M', count: 30, workdaysOnly: false },
+};
+
+// cloudKey -> 视图定义的反查表，loadRange 用
+const VIEW_BY_KEY = {};
+Object.keys(RANGE_VIEWS).forEach((k) => {
+  VIEW_BY_KEY[RANGE_VIEWS[k].cloudKey] = RANGE_VIEWS[k];
+});
+
 // 第二屏色条下方备注（出差地/请假事由）的截断宽度。
 // 单列只有约 183rpx（750 - 左右内边距 48 - 姓名列 128 - 两个 12rpx 间距，再除以 3），
 // 28rpx 字号下一个汉字占 28rpx，所以最多放得下 6 个汉字 = 12 个等效宽度。
@@ -25,9 +45,17 @@ Page({
     stats: null,
     hasMore: false,
 
-    recentCols: [],
-    recentPeople: [],
-    recentLoaded: false,
+    // 三个区间视图（3个工作日 / 7个工作日 / 一个月）各自独立的数据，
+    // 后缀对应 RANGE_VIEWS 里的 cloudKey，互不覆盖、各自懒加载。
+    cols3: [],
+    people3: [],
+    loaded3: false,
+    cols7: [],
+    people7: [],
+    loaded7: false,
+    colsM: [],
+    peopleM: [],
+    loadedM: false,
 
     // 点色条弹出的「不在岗申请」详情。detail 为 null 时不渲染遮罩。
     showDetail: false,
@@ -43,7 +71,6 @@ Page({
     const today = dateUtil.today();
     const dept = wx.getStorageSync(DEPT_KEY) || '';
     this.allPeople = [];
-    this.recentCache = null;
 
     this.setData({
       date: today,
@@ -207,80 +234,144 @@ Page({
     });
   },
 
-  async loadRecent() {
-    if (this.recentLoading) return;
-    this.recentLoading = true;
-    // 今天起往后 3 个工作日：今天排最左，往右是明天、后天。
-    const dates = dateUtil.nextWorkdays(3, this.data.date);
-    const t = dateUtil.today();
-    const cols = dates.map((d) => ({
-      date: d,
-      text: dateUtil.dayShort(d) + ' ' + dateUtil.weekdayText(d),
-      today: d === t ? 'on' : '',
+  // 把服务端 applications 整形成弹窗要的结构。三个区间视图共用。
+  decorateApps(p) {
+    return (p.applications || []).map((a) => ({
+      typeName: statusUtil.typeLabel(a.type),
+      note: a.note || '',
+      rangeLabel: a.rangeLabel || '',
+      coverDays: a.coverDays || [],
+      cls: 'bd-' + a.type,
     }));
-    this.setData({ recentCols: cols, recentLoaded: false });
+  },
+
+  // 加载某个区间视图（'3' / '7' / 'M'）。各自懒加载、互不覆盖。
+  async loadRange(key) {
+    if (this['rangeLoading_' + key]) return;
+    this['rangeLoading_' + key] = true;
+    const def = VIEW_BY_KEY[key];
+    // 3/7 视图按工作日取列：跳过法定节假日/调休放假，算上调休上班的周末——
+    // 跨长假时列头会自动跳过去（如 9/23 看到 9/23、9/24、9/28）。
+    // 一个月视图按自然日取列：周末/节假日以空心格的形态留在月视图里，
+    // 一个月的节奏才看得出来（哪些天本来就不用上班）。
+    const dates = def.workdaysOnly
+      ? dateUtil.nextWorkdays(def.count, this.data.date)
+      : dateUtil.nextDays(def.count, this.data.date);
+    const compact = key === 'M';
+    const t = dateUtil.today();
+
+    const cols = dates.map((d) => {
+      const base = {
+        date: d,
+        today: d === t ? 'on' : '',
+        // 调休上班的周末（如 10/10 周六）加个「班」标记，避免看着像把工作日算错了
+        badge: dateUtil.isMakeupWorkday(d) ? '班' : '',
+      };
+      if (compact) {
+        // 30 列每列只有约 19rpx，只放日号；周末/节假日整格涂灰
+        const rest = !!dateUtil.holidayName(d) || dateUtil.isWeekend(d);
+        base.text = String(Number(d.slice(8)));
+        base.cls = rest ? 'rest' : '';
+        return base;
+      }
+      if (key === '7') {
+        // 7 列每列约 76rpx，放不下「9/24 周四」一行，拆成日期 + 星期两行
+        base.text = dateUtil.dayShort(d);
+        base.sub = dateUtil.weekdayText(d);
+        return base;
+      }
+      base.text = dateUtil.dayShort(d) + ' ' + dateUtil.weekdayText(d);
+      base.sub = '';
+      return base;
+    });
+
+    const upd = {};
+    upd['cols' + key] = cols;
+    upd['loaded' + key] = false;
+    this.setData(upd);
 
     try {
       const { result } = await wx.cloud.callFunction({
         name: 'presence',
-        data: { action: 'range', dates, dept: this.data.dept },
+        data: { action: 'range', dates, dept: this.data.dept, compact },
       });
       if (!result || !result.success) {
-        this.recentLoading = false;
+        this['rangeLoading_' + key] = false;
         return;
       }
-      const people = (result.people || []).map((p) => ({
-        key: p.openid || 'x' + p.name,
-        name: p.name,
-        phone: p.phone || '',
-        joined: p.joined,
-        initial: (p.name || '').slice(0, 1),
-        days: p.days.map((day) => {
-          // 服务端的 segments 会跳过「没有记录的空档」，而色条是按 span 比例平铺的，
-          // 必须先把空档补回来，否则剩下的色块会被拉伸铺满整条——
-          // 表现就是「上午出差、下午在岗」，整条却全成了出差色。
-          const bars = statusUtil.barsFromSegments(day.segments, '');
-          const segs = bars.length ? bars : [{ type: '', span: statusUtil.SLOT_COUNT }];
-          // 色条下方列出当天所有「不在岗」时段：备注 + 时间段。
-          // 备注为空的老记录（备注是后加的必填项）退化成状态名（京内/京外/请假），
-          // 否则色条下面会挂一行空白，看着像没加载出来。
-          // typeName / note 是为「点色条弹窗」多带的：弹窗里要显示完整状态名 + 备注，
-          // 而色条下方的那行只显示 label（备注为空时退化成状态短名），两者用途不同。
-          const items = (day.items || []).map((it) => {
-            const note = (it.note || '').trim();
+      let people;
+      if (compact) {
+        // 一个月视图：每人 30 个格子，格子配色在 statusUtil.monthCellClass 里算好
+        people = (result.people || []).map((p) => ({
+          key: p.openid || 'x' + p.name,
+          name: p.name,
+          phone: p.phone || '',
+          joined: p.joined,
+          initial: (p.name || '').slice(0, 1),
+          cells: (p.marks || []).map((mark, i) => ({
+            cls: statusUtil.monthCellClass(mark, dates[i], p.joined),
+          })),
+          applications: this.decorateApps(p),
+        }));
+      } else {
+        people = (result.people || []).map((p) => ({
+          key: p.openid || 'x' + p.name,
+          name: p.name,
+          phone: p.phone || '',
+          joined: p.joined,
+          initial: (p.name || '').slice(0, 1),
+          days: p.days.map((day) => {
+            // 服务端的 segments 会跳过「没有记录的空档」，而色条是按 span 比例平铺的，
+            // 必须先把空档补回来，否则剩下的色块会被拉伸铺满整条——
+            // 表现就是「上午出差、下午在岗」，整条却全成了出差色。
+            const bars = statusUtil.barsFromSegments(day.segments, '');
+            const segs = bars.length ? bars : [{ type: '', span: statusUtil.SLOT_COUNT }];
+            // 色条下方列出当天所有「不在岗」时段：备注 + 时间段。
+            // 备注为空的老记录（备注是后加的必填项）退化成状态名（京内/京外/请假），
+            // 否则色条下面会挂一行空白，看着像没加载出来。
+            const items = (day.items || []).map((it) => {
+              const note = (it.note || '').trim();
+              return {
+                label: this.ellipsis(note || statusUtil.typeShort(it.type), NOTE_MAX_UNITS),
+                note,
+                typeName: statusUtil.typeLabel(it.type),
+                time: it.time || '',
+                cls: 'bd-' + it.type,
+              };
+            });
             return {
-              label: this.ellipsis(note || statusUtil.typeShort(it.type), NOTE_MAX_UNITS),
-              note,
-              typeName: statusUtil.typeLabel(it.type),
-              time: it.time || '',
-              cls: 'bd-' + it.type,
+              bars: segs.map((s) => ({
+                flex: s.span,
+                barClass: this.segClass(s.type, day.confirmed, day.joined),
+              })),
+              items,
             };
-          });
-          return {
-            bars: segs.map((s) => ({
-              flex: s.span,
-              barClass: this.segClass(s.type, day.confirmed, day.joined),
-            })),
-            items,
-          };
-        }),
-        // 点色条弹窗用的「完整申请」：每条是一条记录（跨多天的也只算一条），
-        // 显示完整起止区间（含详细时刻），不在岗状态名与配色复用 statusUtil / bd-*。
-        // 服务端的 applications 已包含今天及以后（含三天之后）的全部不在岗申请。
-        applications: (p.applications || []).map((a) => ({
-          typeName: statusUtil.typeLabel(a.type),
-          note: a.note || '',
-          rangeLabel: a.rangeLabel || '',
-          coverDays: a.coverDays || [],
-          cls: 'bd-' + a.type,
-        })),
-      }));
-      this.setData({ recentPeople: people, recentLoaded: true });
+          }),
+          // 点色条弹窗用的「完整申请」：每条是一条记录（跨多天的也只算一条），
+          // 显示完整起止区间（含详细时刻），已包含今天及以后（含三天之后）的全部申请。
+          applications: this.decorateApps(p),
+        }));
+      }
+      const upd2 = {};
+      upd2['people' + key] = people;
+      upd2['loaded' + key] = true;
+      this.setData(upd2);
     } catch (e) {
-      console.error('加载近三日失败', e);
+      console.error('加载区间视图失败', e);
     } finally {
-      this.recentLoading = false;
+      this['rangeLoading_' + key] = false;
     }
+  },
+
+  // 当前 screenIndex 对应的视图 key；今天屏（0）返回 ''
+  viewKeyFor(screenIndex) {
+    const def = RANGE_VIEWS[screenIndex];
+    return def ? def.cloudKey : '';
+  },
+
+  // 科室切换 / 下拉刷新后，把三个区间视图的缓存全部作废，下次进入重新拉
+  invalidateRanges() {
+    this.setData({ loaded3: false, loaded7: false, loadedM: false });
   },
 
   segClass(type, confirmed, joined) {
@@ -343,16 +434,18 @@ Page({
     if (dept === this.data.dept) return;
     wx.setStorageSync(DEPT_KEY, dept);
     this.setData({ dept, deptTabs: this.buildDeptTabs(dept) });
-    this.recentCache = null;
+    this.invalidateRanges();
     this.loadToday();
-    if (this.data.screenIndex === 1) this.loadRecent();
+    const key = this.viewKeyFor(this.data.screenIndex);
+    if (key) this.loadRange(key);
   },
 
   onSwiperChange(e) {
     const idx = e.detail.current;
     this.setData({ screenIndex: idx });
-    if (idx === 1 && !this.data.recentLoaded) {
-      this.loadRecent();
+    const key = this.viewKeyFor(idx);
+    if (key && !this.data['loaded' + key]) {
+      this.loadRange(key);
     }
   },
 
@@ -360,15 +453,18 @@ Page({
     this.setData({ screenIndex: Number(e.currentTarget.dataset.i) });
   },
 
-  // 点击第二屏的色条 → 弹出该用户「今天及以后（含三天之后）的所有不在岗申请」。
+  // 点击色条 / 月视图格子 → 弹出该用户「今天及以后（含三天之后）的所有不在岗申请」。
   // 口径与服务端一致：结束时间晚于今天 0 点的申请都列出，每条一条完整记录，不再按天切片。
   // 例如周一申请周四~周六出差，虽然落在三天窗口之外，也会显示出来。
+  // data-v 是视图 key（'3' / '7' / 'M'，dataset 里拿到的是字符串）、
   // data-pi 是人员序号、data-di 是被点的那天序号（用于高亮覆盖那天的申请）。
   onTapBar(e) {
     const ds = e.currentTarget.dataset;
+    const key = ds.v || '3';
     const pi = Number(ds.pi);
     const di = Number(ds.di);
-    const person = this.data.recentPeople[pi];
+    const people = this.data['people' + key] || [];
+    const person = people[pi];
     if (!person) return;
     // 直接列完整申请（每条一条记录），不再按天切片。
     const apps = (person.applications || []).map((a) => ({
@@ -397,7 +493,12 @@ Page({
 
   onPullDownRefresh() {
     const jobs = [this.loadToday()];
-    if (this.data.screenIndex === 1) jobs.push(this.loadRecent());
+    const key = this.viewKeyFor(this.data.screenIndex);
+    if (key) {
+      // 下拉刷新当前视图，同时作废另外两个视图的缓存（下次进入重新拉最新数据）
+      this.invalidateRanges();
+      jobs.push(this.loadRange(key));
+    }
     Promise.all(jobs).then(() => wx.stopPullDownRefresh());
   },
 

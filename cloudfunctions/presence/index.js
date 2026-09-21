@@ -346,12 +346,34 @@ async function dayBoard(event) {
   };
 }
 
+// 「一个月」这类长区间视图用：算出每个日期上该人员的主导「不在岗」类型，无则 ''。
+// 多条记录压在同一天时取开始最早的那条——所以函数内部自己排序，
+// 不依赖调用方保证 mine 的顺序（rangeBoard 里的 mine 是数据库返回顺序）。
+// 独立成函数是为了让测试脚本能把它抽出来单独跑（与 noteForSegment 同一思路）。
+function computeMarks(mine, dates) {
+  const sorted = mine.slice().sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+  return dates.map((d) => {
+    const ds = dayStart(d).getTime();
+    const de = dayEnd(d).getTime();
+    const hit = sorted.find((r) => {
+      if (r.type === 'office') return false;
+      const rs = new Date(r.startAt).getTime();
+      const re = new Date(r.endAt).getTime();
+      return rs < de && re > ds;
+    });
+    return hit ? hit.type : '';
+  });
+}
+
 // 第二屏：最近若干个工作日的分布。
 // 每天合并成若干色块，色块宽度 = 该状态持续的时间占比。
 async function rangeBoard(event) {
   const dates = (event.dates || []).filter((d) => !!d);
   if (dates.length === 0) return { success: false, message: '缺少日期' };
   const dept = event.dept || '';
+  // compact 模式给「一个月」这类长区间视图用：只回传每人每天的主导不在岗类型，
+  // 不回传 19 格 segments——30 天 × 每天若干段的完整结构会把响应撑到几百 KB。
+  const compact = !!event.compact;
   const sorted = dates.slice().sort();
 
   const staffWhere = { active: _.neq(false) };
@@ -383,7 +405,8 @@ async function rangeBoard(event) {
     const joined = !!s.openid;
     const mine = (joined && byOwner[s.openid]) || [];
 
-    const days = dates.map((d) => {
+    // compact 模式不需要逐天的 19 格分段，直接跳过（省一半以上的计算与响应体积）
+    const days = compact ? [] : dates.map((d) => {
       const hasRecord = mine.some((r) => {
         return new Date(r.startAt).getTime() < dayEnd(d).getTime() && new Date(r.endAt).getTime() > dayStart(d).getTime();
       });
@@ -442,6 +465,19 @@ async function rangeBoard(event) {
           }),
         };
       });
+
+    // 「一个月」长区间视图：轻量结构，每人只带 30 个格子的主导不在岗类型 + 申请列表
+    if (compact) {
+      return {
+        openid: s.openid || '',
+        name: s.name || '',
+        dept: s.dept || '',
+        phone: s.phone || '',
+        joined,
+        marks: computeMarks(mine, dates),
+        applications,
+      };
+    }
 
     return {
       openid: s.openid || '',

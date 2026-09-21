@@ -59,6 +59,37 @@
   font-size: 30rpx;
 }
 
+/* ---------- 说明栏：在岗是默认状态，不用填 ---------- */
+/* 去向里只有三种「不在岗」选项，没有「在岗」，不说明会有人以为漏了选项。
+   底色用 .tag-office 那一族的浅绿、文字用它的深绿，和看板上的在岗绿条同族；
+   不用 join-bar 的蓝色——蓝色在本页已经被「去认领」这个行动按钮占用了。 */
+.tip-bar {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  background: #e6f4ec;
+  border-radius: 16rpx;
+  padding: 18rpx 24rpx;
+  margin-bottom: 24rpx;
+}
+
+/* 左侧小方块 = 看板上「在岗」那个绿的色值，提示和色条对得上 */
+.tip-dot {
+  flex: none;
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 4rpx;
+  background: #2f8f5b;
+}
+
+.tip-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  line-height: 1.5;
+  color: #185e3c;
+}
+
 /* ---------- 去向 ---------- */
 
 /* 可填的去向只剩三种（在办公室是默认状态，不在这里选），排一行三个 */

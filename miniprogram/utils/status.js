@@ -2,6 +2,8 @@
 // 时间轴：8:30 - 18:00，每 30 分钟一段，共 19 段。
 // 这个粒度和会议室预约系统一致，避免用户填写 9:15 这类无法对齐的时间。
 
+const dateUtil = require('./date');
+
 const DAY_START_MINUTES = 8 * 60 + 30; // 510
 const DAY_END_MINUTES = 18 * 60; // 1080
 const STEP_MINUTES = 30;
@@ -196,6 +198,20 @@ function buildDots(records) {
   return dots;
 }
 
+// 「一个月」视图的格子配色 class。
+// 优先级：真实的不在岗记录 > 周末/节假日（空心格） > 在岗（绿）。
+// 周末/节假日不再用灰色：灰已经被「请假」占用，同屏两种灰会被看成同一个状态，
+// 现在改成空心格（透明底 + 描边），见 board.wxss 的 .mc-rest。
+// 注意调休上班的周末（如 10/10 周六）按工作日算，不算节假日。
+// 独立成纯函数是为了能被测试脚本直接 require 验证。
+function monthCellClass(mark, dateStr, joined) {
+  if (!joined) return 'mc-blank';
+  if (mark) return 'mc-' + mark;
+  const rest = dateUtil.holidayName(dateStr) ||
+    (dateUtil.isWeekend(dateStr) && !dateUtil.isMakeupWorkday(dateStr));
+  return rest ? 'mc-rest' : 'mc-office';
+}
+
 module.exports = {
   DAY_START_MINUTES,
   DAY_END_MINUTES,
@@ -217,4 +233,5 @@ module.exports = {
   typeLabel,
   typeShort,
   buildDots,
+  monthCellClass,
 };

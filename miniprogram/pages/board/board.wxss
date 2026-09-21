@@ -80,14 +80,16 @@
   color: #ffffff;
 }
 
+/* 四个页签放一行：字号从 42rpx 降到 34rpx、间距收紧，
+   否则「3个工作日 + 7个工作日 + 一个月」加起来撑破 702rpx 的可用宽度 */
 .screen-tabs {
   display: flex;
   padding: 10rpx 24rpx 0;
-  gap: 36rpx;
+  gap: 28rpx;
 }
 
-.screen-tab { 
-  font-size: 42rpx;
+.screen-tab {
+  font-size: 34rpx;
   color: #9a9aa0;
   padding-bottom: 14rpx;
   border-bottom: 4rpx solid transparent;
@@ -121,11 +123,14 @@
   color: #9a9aa0;
 }
 
-/* 状态配色（本页共 4 组，改一处必须四组一起改）：在岗=绿 · 京内=黄 · 京外=红 · 请假=灰
+/* 状态配色（本页共 5 组，改一处必须五组一起改）：在岗=绿 · 京内=黄 · 京外=红 · 请假=灰
    1) .st-*   顶部统计数字
    2) .d-*    时间轴点阵 / 图例
    3) .tag-*  人员行下方的状态标签
-   4) .bar-*  近三个工作日的色条
+   4) .bar-*  3 个工作日 / 7 个工作日两屏的色条
+   5) .mc-*   「一个月」屏的色块
+   在岗的绿、京内的黄、京外的红、请假的灰，五组必须取同一个色值——
+   否则同一个「京外出差」在色条上是一个红、在月视图里是另一个红，会以为是两个状态。
    京内是双色调：点/条用亮黄 #ffc107（小尺寸下才看得出是黄色），
    数字用金 #c08a00（亮黄当文字压白底只有 1.6:1 读不了，这是能读的最亮的黄）。 */
 
@@ -333,17 +338,62 @@
   gap: 12rpx;
 }
 
+/* 一列的列头：日期一行，下面可能跟一个「班」小标（调休上班日才有）。
+   容器做成纵向 flex 居中，加了小标也只往下长，不会把日期文字挤歪。 */
 .recent-col {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.recent-col-text {
   font-size: 28rpx;
+  line-height: 1.2;
   color: #9a9aa0;
   text-align: center;
+  white-space: nowrap;
 }
 
 /* 今天那一列加深：列头从今天开始往右排，标出来才不会看错列 */
-.recent-col.on {
+.recent-col.on .recent-col-text {
   color: #185fa5;
   font-weight: 500;
+}
+
+/* 调休上班的周末（如 10/10 周六）：加个「班」小标。
+   用与「京内出差」同族的琥珀色，不占状态四色（绿/黄/红/灰），不会和色条混淆。 */
+.recent-col-badge {
+  margin-top: 4rpx;
+  padding: 0 8rpx;
+  font-size: 20rpx;
+  line-height: 1.5;
+  color: #c08a00;
+  background: #fdf3d7;
+  border-radius: 4rpx;
+}
+
+/* 列头的星期行：7 列视图专用（3 列视图日期星期同一行，sub 为空不渲染） */
+.recent-col-sub {
+  font-size: 18rpx;
+  line-height: 1.2;
+  color: #9a9aa0;
+}
+
+/* 7 列窄视图：列宽从约 183rpx 缩到约 76rpx，字号、间距同步缩小 */
+.cols-narrow {
+  gap: 6rpx;
+}
+
+.cols-narrow .recent-col-text {
+  font-size: 22rpx;
+}
+
+.cols-narrow .recent-col-badge {
+  font-size: 16rpx;
+  padding: 0 4rpx;
+  margin-top: 2rpx;
 }
 
 /* 第二屏的一列：色条 + 条下方的不在岗文字。
@@ -432,6 +482,97 @@
 
 .bd-leave {
   color: #444441;
+}
+
+/* ---------- 一个月（自然日 30 格） ---------- */
+
+/* 一行 30 格：750 - 内边距 48 - 姓名列 128 = 574rpx，每格约 18rpx */
+.month-cols {
+  flex: 1;
+  display: flex;
+  gap: 2rpx;
+}
+
+/* 列头：只放日号。周末/节假日整格灰底，今天蓝底白字 */
+.mh-cell {
+  flex: 1;
+  height: 26rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3rpx;
+  background: #fafafa;
+}
+
+/* 列头里的周末/节假日：用一层米色底标出「这天不上班」。
+   米色只出现在列头（日历属性），人员行里非工作日一律用空心格（.mc-rest），
+   两处不共用同一个颜色，避免又和「请假灰」撞上。 */
+.mh-cell.rest {
+  background: #f1efe8;
+}
+
+.mh-cell.on {
+  background: #185fa5;
+}
+
+.mh-text {
+  font-size: 16rpx;
+  line-height: 1;
+  color: #9a9aa0;
+}
+
+.mh-cell.on .mh-text {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* 提示行：说明空心格含义 + 可点，压一行小字不抢戏 */
+.month-hint {
+  padding: 4rpx 24rpx 8rpx;
+  font-size: 20rpx;
+  color: #b4b2a9;
+}
+
+/* 人员的 30 个格子。配色优先级：真实不在岗记录 > 周末/节假日 > 在岗，
+   见 utils/status.js 的 monthCellClass()。
+   四种状态色与 .bar-* 一一对应（同色值），不另配一套深浅。 */
+.m-cell {
+  flex: 1;
+  height: 28rpx;
+  border-radius: 3rpx;
+}
+
+.mc-office {
+  background: #2f8f5b;
+}
+
+.mc-meeting {
+  background: #ffc107;
+}
+
+.mc-trip {
+  background: #c0392b;
+}
+
+.mc-leave {
+  background: #6f6e68;
+}
+
+/* 周末 / 法定节假日：画成「空心格」——不填充、只留一圈极淡描边。
+   之前这里用的是浅灰，但灰已经被「请假」占用了，同屏出现两种灰会看成同一个状态；
+   空心格和上面四种实心色块是两种形状语言，扫一眼就能分开，一串连续的空心格
+   也就是一整段假期。
+   box-sizing: border-box 是必须的：30 个格子若各按 content-box 多出 2rpx 边框，
+   整行会比可用宽度多 60rpx，右侧几格会被挤出屏幕。 */
+.mc-rest {
+  background: transparent;
+  border: 1rpx solid #e3e1d8;
+  box-sizing: border-box;
+}
+
+/* 未认领身份：整行都是这个色，表示「这个人没有数据」，不是状态色 */
+.mc-blank {
+  background: #fbfbf9;
 }
 
 /* ---------- 其他 ---------- */

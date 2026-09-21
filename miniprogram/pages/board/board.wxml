@@ -5,6 +5,79 @@
     <text class="join-tip-btn">去认领</text>
   </view>
 
+  <!-- 3 个工作日 / 7 个工作日两个屏共用一套色条模板：
+       差异只有列宽、列头行数、是否显示色条下的备注，用 narrow 一个开关区分。
+       template 必须先定义后使用，所以放在最前面（本身不渲染任何东西）。 -->
+  <template name="rangeBars">
+    <scroll-view class="scroll" scroll-y>
+
+      <view class="recent-head">
+        <view class="name-col"></view>
+        <view class="recent-cols {{narrow ? 'cols-narrow' : ''}}">
+          <view class="recent-col {{item.today}}" wx:for="{{cols}}" wx:key="date">
+            <text class="recent-col-text">{{item.text}}</text>
+            <text class="recent-col-sub" wx:if="{{item.sub}}">{{item.sub}}</text>
+            <!-- 调休上班的周末加个「班」标，避免周六排在工作日列里看着像算错 -->
+            <text class="recent-col-badge" wx:if="{{item.badge}}">{{item.badge}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="prow prow-recent" wx:for="{{people}}" wx:for-index="pi" wx:key="key">
+        <view
+          class="name-col"
+          data-name="{{item.name}}"
+          data-phone="{{item.phone}}"
+          data-joined="{{item.joined}}"
+          bindtap="onTapName"
+        >
+          <text class="pname">{{item.name}}</text>
+        </view>
+        <view class="recent-cols {{narrow ? 'cols-narrow' : ''}}">
+          <view
+            class="bar-cell"
+            wx:for="{{item.days}}"
+            wx:for-item="day"
+            wx:for-index="di"
+            wx:key="index"
+            data-v="{{v}}"
+            data-pi="{{pi}}"
+            data-di="{{di}}"
+            bindtap="onTapBar"
+          >
+            <view class="bar">
+              <view
+                class="bar-seg {{b.barClass}}"
+                wx:for="{{day.bars}}"
+                wx:for-item="b"
+                wx:for-index="bi"
+                wx:key="index"
+                style="flex:{{b.flex}}"
+              ></view>
+            </view>
+            <!-- 7 列时每列只有约 76rpx，备注放不下，隐藏；想看细节点色条弹窗 -->
+            <block wx:if="{{!narrow}}">
+              <view
+                class="bar-note"
+                wx:for="{{day.items}}"
+                wx:for-item="nt"
+                wx:for-index="ni"
+                wx:key="time"
+              >
+                <text class="bar-note-text {{nt.cls}}">{{nt.label}}</text>
+                <text class="bar-note-time">{{nt.time}}</text>
+              </view>
+            </block>
+          </view>
+        </view>
+      </view>
+
+      <view class="empty" wx:if="{{loaded && people.length === 0}}">该科室暂无人员</view>
+      <view class="empty" wx:if="{{!loaded}}">加载中…</view>
+
+    </scroll-view>
+  </template>
+
   <view class="header">
     <view class="title-row">
       <text class="date-title">{{dateTitle}}</text>
@@ -21,7 +94,7 @@
       >{{item.label}}</view>
     </scroll-view>
 
-    
+
 
     <view class="stats" wx:if="{{stats}}">
       <view class="stat">
@@ -43,17 +116,10 @@
     </view>
     <view class="screen-tabs">
       <view class="screen-tab {{screenIndex === 0 ? 'on' : ''}}" data-i="0" bindtap="onScreenTap">今天</view>
-      <view class="screen-tab {{screenIndex === 1 ? 'on' : ''}}" data-i="1" bindtap="onScreenTap">未来3个工作日</view>
+      <view class="screen-tab {{screenIndex === 1 ? 'on' : ''}}" data-i="1" bindtap="onScreenTap">3个工作日</view>
+      <view class="screen-tab {{screenIndex === 2 ? 'on' : ''}}" data-i="2" bindtap="onScreenTap">7个工作日</view>
+      <view class="screen-tab {{screenIndex === 3 ? 'on' : ''}}" data-i="3" bindtap="onScreenTap">一个月</view>
     </view>
-    <!-- 图例固定在这里（header 不随列表滚动）。
-         原先放在列表末尾，人一多就要滚到底才看得到，等于没有图例。
-         四个色点两屏共用，所以只留这一份。 -->
-    <!-- <view class="legend">
-      <view class="lg-item"><view class="dot d-office"></view><text>在岗</text></view>
-      <view class="lg-item"><view class="dot d-meeting"></view><text>京内出差</text></view>
-      <view class="lg-item"><view class="dot d-trip"></view><text>京外出差</text></view>
-      <view class="lg-item"><view class="dot d-leave"></view><text>请假</text></view>
-    </view> -->
   </view>
 
   <swiper class="swiper" current="{{screenIndex}}" bindchange="onSwiperChange" duration="{{200}}">
@@ -97,22 +163,36 @@
         <view class="empty" wx:if="{{errorMsg}}">{{errorMsg}}</view>
         <view class="empty" wx:if="{{!loading && !errorMsg && todayPeople.length === 0}}">该科室暂无人员</view>
 
-        <!-- 图例已移到顶部 header，不再放在列表末尾（人一多就看不到） -->
-
       </scroll-view>
     </swiper-item>
 
+    <swiper-item class="sw-item">
+      <template is="rangeBars" data="{{cols: cols3, people: people3, loaded: loaded3, narrow: false, v: '3'}}"/>
+    </swiper-item>
+
+    <swiper-item class="sw-item">
+      <template is="rangeBars" data="{{cols: cols7, people: people7, loaded: loaded7, narrow: true, v: '7'}}"/>
+    </swiper-item>
+
+    <!-- 一个月：按自然日取 30 列，每天一格。
+         色块 = 当天主导的不在岗状态（绿/黄/红/灰，与色条同色值）；
+         空心格 = 周末/节假日（不填色，只留描边，避免和「请假灰」混淆）；
+         点色块同样弹出「今天及以后的全部不在岗申请」。 -->
     <swiper-item class="sw-item">
       <scroll-view class="scroll" scroll-y>
 
         <view class="recent-head">
           <view class="name-col"></view>
-          <view class="recent-cols">
-            <text class="recent-col {{item.today}}" wx:for="{{recentCols}}" wx:key="date">{{item.text}}</text>
+          <view class="month-cols">
+            <view class="mh-cell {{item.cls}} {{item.today}}" wx:for="{{colsM}}" wx:key="date">
+              <text class="mh-text">{{item.text}}</text>
+            </view>
           </view>
         </view>
 
-        <view class="prow prow-recent" wx:for="{{recentPeople}}" wx:for-index="pi" wx:key="key">
+        <view class="month-hint">空心格为周末/节假日 · 点击色块查看详情</view>
+
+        <view class="prow prow-recent" wx:for="{{peopleM}}" wx:for-index="pi" wx:key="key">
           <view
             class="name-col"
             data-name="{{item.name}}"
@@ -122,54 +202,30 @@
           >
             <text class="pname">{{item.name}}</text>
           </view>
-          <view class="recent-cols">
+          <view class="month-cols">
             <view
-              class="bar-cell"
-              wx:for="{{item.days}}"
-              wx:for-item="day"
-              wx:for-index="di"
+              class="m-cell {{c.cls}}"
+              wx:for="{{item.cells}}"
+              wx:for-item="c"
+              wx:for-index="ci"
               wx:key="index"
+              data-v="M"
               data-pi="{{pi}}"
-              data-di="{{di}}"
+              data-di="{{ci}}"
               bindtap="onTapBar"
-            >
-              <view class="bar">
-                <view
-                  class="bar-seg {{b.barClass}}"
-                  wx:for="{{day.bars}}"
-                  wx:for-item="b"
-                  wx:for-index="bi"
-                  wx:key="index"
-                  style="flex:{{b.flex}}"
-                ></view>
-              </view>
-              <view
-                class="bar-note"
-                wx:for="{{day.items}}"
-                wx:for-item="nt"
-                wx:for-index="ni"
-                wx:key="time"
-              >
-                <text class="bar-note-text {{nt.cls}}">{{nt.label}}</text>
-                <text class="bar-note-time">{{nt.time}}</text>
-              </view>
-            </view>
+            ></view>
           </view>
         </view>
 
-        
-
-        <view class="empty" wx:if="{{recentLoaded && recentPeople.length === 0}}">该科室暂无人员</view>
-        <view class="empty" wx:if="{{!recentLoaded}}">加载中…</view>
-
-        <!-- 图例已移到顶部 header，不再放在列表末尾（人一多就看不到） -->
+        <view class="empty" wx:if="{{loadedM && peopleM.length === 0}}">该科室暂无人员</view>
+        <view class="empty" wx:if="{{!loadedM}}">加载中…</view>
 
       </scroll-view>
     </swiper-item>
 
   </swiper>
 
-  <!-- 点击色条弹出的「不在岗申请」详情。遮罩点一下就关，卡片内部点不会关 -->
+  <!-- 点击色条/色块弹出的「不在岗申请」详情。遮罩点一下就关，卡片内部点不会关 -->
   <view class="modal-mask" wx:if="{{showDetail}}" bindtap="closeDetail">
     <view class="modal-card" catchtap="noop">
       <view class="modal-head">

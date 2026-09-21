@@ -10,6 +10,14 @@
     <view class="join-btn" bindtap="goMine">去认领</view>
   </view>
 
+  <!-- 说明栏：去向里只有三种不在岗选项，没有「在岗」——
+       有人会以为漏了选项。这里讲清：在岗不用登记，没登记的时段看板按在岗（绿）显示。
+       左边的小方块直接用「在岗绿」，把这句话和看板上的绿条对上。 -->
+  <view class="tip-bar">
+    <view class="tip-dot"></view>
+    <text class="tip-text">在岗是默认状态，不用填写</text>
+  </view>
+
   <view class="card">
     <view class="sec-title">去向</view>
     <view class="type-grid">
