@@ -1,39 +1,6 @@
-// 科室归一化：容忍「一室」「1 室」「办公室」等常见写法
-const DEPT_ALIAS = {
-  '1室': '1室', '一室': '1室', '1': '1室',
-  '2室': '2室', '二室': '2室', '2': '2室',
-  '3室': '3室', '三室': '3室', '3': '3室',
-  '4室': '4室', '四室': '4室', '4': '4室',
-  '部办': '部办', '办公室': '部办', '部办理': '部办',
-};
-
-function normalizeDept(raw) {
-  const t = String(raw || '').replace(/\s/g, '');
-  return DEPT_ALIAS[t] || t;
-}
-
-// 解析粘贴进来的名册文本。每行一个人，支持：
-//   Excel 复制的制表符分隔、中英文逗号、空格
-// 只取姓名和科室两列。多写的内容（比如从别的表里带过来的电话列）会被忽略——
-// 电话是个人资料，由各人认领后自己填，不由管理员导入。
-function parseRoster(text) {
-  const items = [];
-  const bad = [];
-  String(text || '').split('\n').forEach((line) => {
-    const raw = line.trim();
-    if (!raw) return;
-    let parts = raw.split(/[\t,，;；]+/).map((s) => s.trim()).filter(Boolean);
-    if (parts.length < 2) {
-      parts = raw.split(/\s+/).filter(Boolean);
-    }
-    if (parts.length < 2) {
-      bad.push(raw);
-      return;
-    }
-    items.push({ name: parts[0], dept: normalizeDept(parts[1]) });
-  });
-  return { items, bad };
-}
+// 名册文本的解析与工号规范化都在 utils/roster.js 里（纯函数，可单测）。
+// 这里只负责把解析结果接进页面。
+const rosterUtil = require('../../utils/roster.js');
 
 Page({
   data: {
@@ -50,6 +17,7 @@ Page({
 
     // 新增单人
     newName: '',
+    newJobNo: '',
     newDeptIndex: 0,
     newDeptText: '',
     deptOptions: [],
@@ -94,18 +62,28 @@ Page({
         this.setData({ loading: false });
         return;
       }
-      const list = (result.list || []).map((x) => ({
-        _id: x._id,
-        name: x.name,
-        dept: x.dept,
-        phone: x.phone || '',
-        claimed: x.claimed,
-        isAdmin: x.isAdmin,
-        stateText: x.claimed ? '已认领' : '未认领',
-        stateClass: x.claimed ? 'st-ok' : 'st-wait',
-        // 在 JS 里算好文案，避免在 WXML 表达式里写中文
-        adminActionText: x.isAdmin ? '取消管理员' : '设为管理员',
-      }));
+      const list = (result.list || []).map((x) => {
+        const jobNo = x.jobNo || '';
+        return {
+          _id: x._id,
+          name: x.name,
+          dept: x.dept,
+          jobNo,
+          phone: x.phone || '',
+          claimed: x.claimed,
+          isAdmin: x.isAdmin,
+          stateText: x.claimed ? '已认领' : '未认领',
+          stateClass: x.claimed ? 'st-ok' : 'st-wait',
+          // 没工号的人：认领时必须填工号并与名册比对，所以他认领不了。
+          // 这里显式标出来，管理员才知道要补——否则只会收到一句「认领不上」。
+          // 文案在 JS 里算好，WXML 表达式里不写中文。
+          needJobNo: !jobNo,
+          jobNoText: jobNo || '缺工号',
+          jobNoActionText: jobNo ? '改工号' : '补工号',
+          // 在 JS 里算好文案，避免在 WXML 表达式里写中文
+          adminActionText: x.isAdmin ? '取消管理员' : '设为管理员',
+        };
+      });
       this.setData({ list, loading: false });
       this.applyFilter();
     } catch (e) {
@@ -116,11 +94,17 @@ Page({
 
   applyFilter() {
     const { list, deptFilter, keyword } = this.data;
-    const kw = String(keyword || '').trim();
+    const kw = String(keyword || '').trim().toLowerCase();
     const filtered = list.filter((x) => {
       if (deptFilter && x.dept !== deptFilter) return false;
-      if (kw && (x.name || '').indexOf(kw) < 0) return false;
-      return true;
+      if (!kw) return true;
+      // 姓名、科室、工号都能搜——工号是纯数字/字母，按大小写不敏感比对，
+      // 免得名册里存的是 A100、管理员搜 a100 搜不到
+      return (
+        (x.name || '').indexOf(kw) >= 0 ||
+        (x.dept || '').indexOf(kw) >= 0 ||
+        (x.jobNo || '').toLowerCase().indexOf(kw) >= 0
+      );
     });
     this.setData({ filtered });
   },
@@ -139,6 +123,10 @@ Page({
     this.setData({ newName: e.detail.value });
   },
 
+  onNewJobNo(e) {
+    this.setData({ newJobNo: e.detail.value });
+  },
+
   onNewDept(e) {
     const idx = Number(e.detail.value);
     this.setData({
@@ -153,16 +141,23 @@ Page({
       wx.showToast({ title: '请填写姓名', icon: 'none' });
       return;
     }
+    // 工号是导入必填项：本人认领时要拿它和名册比对，缺了这个人就认领不了。
+    // 先在本地按同一规则归一化，格式不对就不必麻烦云函数了。
+    const jobNo = rosterUtil.normalizeJobNo(this.data.newJobNo);
+    if (!jobNo) {
+      wx.showToast({ title: '请填写工号（2-20 位字母或数字）', icon: 'none' });
+      return;
+    }
     const dept = this.data.deptOptions[this.data.newDeptIndex];
     wx.showLoading({ title: '添加中' });
     try {
       const { result } = await wx.cloud.callFunction({
         name: 'staff',
-        data: { action: 'add', name, dept },
+        data: { action: 'add', name, dept, jobNo },
       });
       if (result && result.success) {
         wx.showToast({ title: '已添加', icon: 'success' });
-        this.setData({ newName: '' });
+        this.setData({ newName: '', newJobNo: '' });
         this.loadList();
       } else {
         wx.showToast({ title: (result && result.message) || '添加失败', icon: 'none' });
@@ -291,31 +286,89 @@ Page({
     }
   },
 
+  // 补 / 改某个人的工号。
+  //
+  // 为什么需要这个入口：工号是后加的需求，之前导进来的名册里没有这一列。
+  // 而认领时工号是必填、且要与名册里的值比对，所以存量的人一律认领不上。
+  // 有了「补工号」，管理员逐人补齐即可，不必「清空未认领名册」再重导一遍。
+  // 用 wx.showModal 的 editable 输入框，省掉一整套自绘弹窗。
+  async editJobNo(e) {
+    const ds = e.currentTarget.dataset;
+    const id = ds.id;
+    const name = ds.name;
+    const cur = ds.jobno || '';
+    const res = await new Promise((resolve) => {
+      wx.showModal({
+        title: cur ? '修改工号' : '补填工号',
+        content: cur,
+        editable: true,
+        placeholderText: '请输入 ' + name + ' 的工号（2-20 位字母或数字）',
+        success: resolve,
+        fail: () => resolve({ confirm: false }),
+      });
+    });
+    if (!res.confirm) return;
+
+    const jobNo = rosterUtil.normalizeJobNo(res.content);
+    if (!jobNo) {
+      wx.showToast({ title: '工号格式不正确（2-20 位字母或数字）', icon: 'none' });
+      return;
+    }
+
+    wx.showLoading({ title: '保存中' });
+    try {
+      const { result } = await wx.cloud.callFunction({
+        name: 'staff',
+        data: { action: 'update', id, jobNo },
+      });
+      if (result && result.success) {
+        wx.showToast({ title: '已保存', icon: 'success' });
+        this.loadList();
+      } else {
+        wx.showToast({ title: (result && result.message) || '保存失败', icon: 'none' });
+      }
+    } catch (err) {
+      console.error('保存工号失败', err);
+      wx.showToast({ title: '保存失败', icon: 'none' });
+    } finally {
+      wx.hideLoading();
+    }
+  },
+
   onRosterInput(e) {
     const text = e.detail.value;
-    const { items, bad } = parseRoster(text);
+    const { items, bad, missing } = rosterUtil.parseRoster(text);
     let previewText = '';
     if (items.length) {
       previewText = '识别到 ' + items.length + ' 人';
-      if (bad.length) previewText = previewText + '，另有 ' + bad.length + ' 行无法识别';
-    } else if (bad.length) {
-      previewText = '没有识别到有效内容，请检查格式';
+      // 「缺工号」和「认不出格式」要分开报：
+      // 前者是格式升级（旧的姓名+科室两列写法），补一列就能过；
+      // 后者是分隔符都没用对，得看原文。
+      if (missing.length) previewText += '，另有 ' + missing.length + ' 行缺少工号或工号格式不对（不会导入）';
+      if (bad.length) previewText += '，' + bad.length + ' 行无法识别';
+    } else if (missing.length || bad.length) {
+      previewText = '没有识别到有效内容，每行需要「姓名 + 工号」，例如：张三,10086,1室';
     }
     this.setData({ rosterText: text, previewCount: items.length, previewText });
   },
 
   async doImport() {
     if (this.data.importing) return;
-    const { items, bad } = parseRoster(this.data.rosterText);
+    const { items, bad, missing } = rosterUtil.parseRoster(this.data.rosterText);
     if (items.length === 0) {
       wx.showToast({ title: '没有可导入的内容', icon: 'none' });
       return;
     }
 
+    let content = '将导入 ' + items.length + ' 人';
+    if (missing.length) content += '，忽略 ' + missing.length + ' 行缺少工号或格式不对';
+    if (bad.length) content += '，忽略 ' + bad.length + ' 行';
+    content += '。同名同科室、或工号重复的人会自动跳过。';
+
     const res = await new Promise((resolve) => {
       wx.showModal({
         title: '确认导入',
-        content: '将导入 ' + items.length + ' 人' + (bad.length ? '，忽略 ' + bad.length + ' 行' : '') + '。同名同科室的人会自动跳过。',
+        content,
         confirmText: '导入',
         success: resolve,
         fail: () => resolve({ confirm: false }),
@@ -333,6 +386,7 @@ Page({
       if (result && result.success) {
         let msg = '成功导入 ' + result.added + ' 人';
         if (result.skippedCount) msg = msg + '，跳过重复 ' + result.skippedCount + ' 人';
+        if (result.dupJobNoCount) msg = msg + '，工号已被占用 ' + result.dupJobNoCount + ' 人';
         if (result.invalidCount) msg = msg + '，科室不识别 ' + result.invalidCount + ' 人';
         wx.showModal({
           title: '导入完成',

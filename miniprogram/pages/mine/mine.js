@@ -1,3 +1,5 @@
+const rosterUtil = require('../../utils/roster.js');
+
 Page({
   data: {
     loading: true,
@@ -10,6 +12,7 @@ Page({
     rosterEmpty: false,
     setupMode: false,
     setupName: '',
+    setupJobNo: '',
     setupPhone: '',
     setupDeptIndex: 0,
     setupDeptText: '',
@@ -17,6 +20,7 @@ Page({
     // 认领流程
     claimMode: false,
     keyword: '',
+    claimJobNo: '',
     claimPhone: '',
     claimList: [],
     claimLoading: false,
@@ -27,6 +31,7 @@ Page({
     editing: false,
     editName: '',
     editPhone: '',
+    editJobNoText: '',
     deptOptions: [],
     deptIndex: 0,
     editDept: '',
@@ -70,6 +75,10 @@ Page({
     this.setData({ setupName: e.detail.value });
   },
 
+  onSetupJobNo(e) {
+    this.setData({ setupJobNo: e.detail.value });
+  },
+
   onSetupPhone(e) {
     this.setData({ setupPhone: e.detail.value });
   },
@@ -99,12 +108,18 @@ Page({
       wx.showToast({ title: '请填写电话号码', icon: 'none' });
       return;
     }
+    // 工号必填：先在本地按与云函数同一套规则归一化，格式不对就不用麻烦服务端了
+    const jobNo = rosterUtil.normalizeJobNo(this.data.setupJobNo);
+    if (!jobNo) {
+      wx.showToast({ title: '请填写工号（2-20 位字母或数字）', icon: 'none' });
+      return;
+    }
 
     wx.showLoading({ title: '创建中' });
     try {
       const { result } = await wx.cloud.callFunction({
         name: 'login',
-        data: { action: 'bootstrap', name, dept, phone },
+        data: { action: 'bootstrap', name, dept, phone, jobNo },
       });
       if (result && result.success) {
         await getApp().refresh();
@@ -143,6 +158,10 @@ Page({
     this.setData({ keyword: kw });
     clearTimeout(this._t);
     this._t = setTimeout(() => this.loadClaimable(kw), 250);
+  },
+
+  onClaimJobNo(e) {
+    this.setData({ claimJobNo: e.detail.value });
   },
 
   onClaimPhone(e) {
@@ -188,7 +207,16 @@ Page({
 
   async doClaim(e) {
     const item = e.currentTarget.dataset;
-    // 电话是必填项。先校验再弹确认框——否则用户点了「是我」才被告知没填，白跑一趟。
+    // 工号 + 电话都是必填项。**先校验再弹确认框**——否则用户点了「是我」
+    // 才被告知没填，白跑一趟。
+    //
+    // 工号在这里还只是"填了没有"，对不对由云函数拿它和名册记录比对。
+    // 不在前端比对：认领列表接口不下发工号（下发了就等于把答案印在题面上）。
+    const jobNo = rosterUtil.normalizeJobNo(this.data.claimJobNo);
+    if (!jobNo) {
+      wx.showToast({ title: '请先填写工号（2-20 位字母或数字）', icon: 'none' });
+      return;
+    }
     const phone = String(this.data.claimPhone || '').trim();
     if (!phone) {
       wx.showToast({ title: '请先填写电话号码', icon: 'none' });
@@ -213,6 +241,7 @@ Page({
         data: {
           action: 'claim',
           staffId: item.id,
+          jobNo,
           phone,
         },
       });
@@ -226,6 +255,7 @@ Page({
           isAdmin: getApp().globalData.isAdmin,
           claimMode: false,
           claimList: [],
+          claimJobNo: '',
           claimPhone: '',
         });
         wx.showToast({
@@ -251,6 +281,9 @@ Page({
       editing: true,
       editName: me.name || '',
       editPhone: me.phone || '',
+      // 工号只读展示。兜底文案在 JS 里算好——WXML 的 {{}} 里不写中文字面量。
+      // 走到「未登记」说明这是工号上线前建的老记录，主人得去找管理员补。
+      editJobNoText: me.jobNo || '未登记',
       editDept: depts[idx] || '',
       deptIndex: idx,
     });

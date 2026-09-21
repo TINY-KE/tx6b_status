@@ -44,6 +44,7 @@ function toMe(doc) {
     _id: doc._id,
     name: doc.name,
     dept: doc.dept,
+    jobNo: doc.jobNo || '',
     phone: doc.phone || '',
     openid: doc.openid,
     isAdmin: !!doc.isAdmin,
@@ -56,6 +57,19 @@ function normalizePhone(raw) {
   const t = String(raw || '').replace(/[\s\-()（）]/g, '');
   if (!t) return '';
   return /^\+?\d{4,20}$/.test(t) ? t : null;
+}
+
+// 工号规范化：去掉空格、横线、下划线，字母统一大写，只留字母数字，2-20 位。
+//
+// 与 staff 云函数里的同名函数、以及小程序端 utils/roster.js 的那份
+// 必须**逐字一致**——三处不一致的后果是「名册里存 A100、用户打 a-100 认领被判错」。
+// 单测里有一条断言专门比对实现，改规则时别忘了同步另外两处。
+//
+// 这里做归一化（而不只是 trim）是为了让**认领时的比对足够宽容**：
+// 工号是打印在工牌上的，用户抄进来的大小写、空格、连字符都不该让他认领失败。
+function normalizeJobNo(raw) {
+  const t = String(raw || '').replace(/[\s\-_]/g, '').toUpperCase();
+  return /^[A-Z0-9]{2,20}$/.test(t) ? t : '';
 }
 
 exports.main = async (event) => {
@@ -111,11 +125,22 @@ async function bootstrap(event, openid) {
   const phone = normalizePhone(event.phone);
   if (phone === null) return { success: false, message: '电话号码格式不正确' };
   if (!phone) return { success: false, message: '请填写电话号码' };
+  // 工号同样是必填（与认领流程保持一致）：名册为空时虽然没法"核对"，
+  // 但这个人马上会成为管理员、接着就要导入名册，先把工号立起来，
+  // 后面别人认领时才有比自己填的工号可比对的东西。
+  const jobNo = normalizeJobNo(event.jobNo);
+  if (!jobNo) return { success: false, message: '请填写工号（2-20 位字母或数字）' };
+
+  // 工号唯一。正常走到这里时名册是空的、不会有冲突，
+  // 但并发下两个人同时 bootstrap 时可能撞上，查一下更稳妥。
+  const dup = await db.collection('staff').where({ jobNo }).limit(1).get();
+  if (dup.data.length > 0) return { success: false, message: '该工号已被占用' };
 
   const addRes = await db.collection('staff').add({
     data: {
       name,
       dept,
+      jobNo,
       phone,
       openid,
       isAdmin: true,
@@ -157,12 +182,8 @@ async function claim(event, openid) {
     return { success: false, message: '该身份已被认领' };
   }
 
-  // 电话在认领时是必填的
-  const phone = normalizePhone(event.phone);
-  if (phone === null) return { success: false, message: '电话号码格式不正确' };
-  if (!phone) return { success: false, message: '请填写电话号码' };
-
-  // 「第一个使用者自动成为管理员」的判断。
+  // 「第一个使用者自动成为管理员」的判断。挪到最前面，因为下面工号核对
+  // 要用 adminCount 决定一个例外分支。
   //
   // ✗ 别写成 claimedAt: db.command.exists(true)：用「字段是否存在」推断「有没有人认领过」
   //   不可靠，实测会每次都判成"第一个"，结果是**每个认领的人都变成管理员**。
@@ -173,11 +194,52 @@ async function claim(event, openid) {
   const isFirst = claimedCount.total === 0 && adminCount.total === 0;
   console.log('[claim] claimed=' + claimedCount.total + ' admin=' + adminCount.total + ' isFirst=' + isFirst);
 
+  // 工号核对：本人填的工号必须与名册里管理员导入的那个一致。
+  //
+  // 这是认领流程里**唯一一处真正的身份校验**——姓名是公开的、科室是公开的，
+  // 光靠"点一下自己的名字"其实是谁都能点。工号让「认领自己」变成一件需要凭据的事。
+  // 比对走归一化：大小写、空格、连字符的差异都不算错（见 normalizeJobNo）。
+  const jobNo = normalizeJobNo(event.jobNo);
+  if (!jobNo) {
+    return { success: false, message: '请填写工号（2-20 位字母或数字）' };
+  }
+  const recordJobNo = normalizeJobNo(target.data.jobNo);
+  // 名册里没工号、需要回填时用的值。正常流程下恒为空。
+  let jobNoToWrite = '';
+  if (!recordJobNo) {
+    // 存量名册（工号是后加的需求）里这个人没登记工号，无从核对。
+    // 默认**不放行**——"填什么就写什么"等于工号白设了，
+    // 让管理员在「名册管理 → 补工号」里补一下就行。
+    //
+    // 但有一个例外必须放行：名册里**一个管理员都没有**的时候
+    //（例如在云开发控制台手工灌了名册，还没人认领过），
+    // 谁都没资格去补工号，认领会被永久卡死。
+    // 此时以本人填的工号为准写回记录——他认领成功后就是管理员，
+    // 这个口子随即关闭（下一次进来 adminCount > 0，走不到这里）。
+    if (adminCount.total > 0) {
+      return {
+        success: false,
+        message:
+          (target.data.name || '该人员') + ' 的名册记录还没有登记工号，请联系管理员补填后再认领',
+      };
+    }
+    jobNoToWrite = jobNo;
+    console.log('[claim] 名册无工号且无管理员，放行并回填工号 staffId=' + staffId);
+  } else if (jobNo !== recordJobNo) {
+    return { success: false, message: '工号与名册记录不一致，请核对后重试；不确定可向管理员确认' };
+  }
+
+  // 电话在认领时是必填的
+  const phone = normalizePhone(event.phone);
+  if (phone === null) return { success: false, message: '电话号码格式不正确' };
+  if (!phone) return { success: false, message: '请填写电话号码' };
+
   const patch = {
     openid,
     claimedAt: db.serverDate(),
     phone: phone,
   };
+  if (jobNoToWrite) patch.jobNo = jobNoToWrite;
   if (isFirst) patch.isAdmin = true;
 
   await db.collection('staff').doc(staffId).update({ data: patch });
@@ -203,6 +265,11 @@ async function updateProfile(event, openid) {
     if (!phone) return { success: false, message: '请填写电话号码' };
     patch.phone = phone;
   }
+  // 工号**不在这里改**：它是管理员导入、本人在认领时用来自证身份的那份凭据。
+  // 允许本人随意改，就等于把核对用的答案交到被核对的人手里，工号也就白设了。
+  // 真的写错了（认领时才发现打错字）找管理员，管理员在「名册管理」里可以逐人改。
+  //
+  // 也正因如此，「编辑我的资料」页把工号显示成不可编辑的一行。
   if (Object.keys(patch).length === 0) {
     return { success: false, message: '没有需要修改的内容' };
   }

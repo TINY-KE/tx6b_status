@@ -55,6 +55,21 @@
   border-radius: 6rpx;
 }
 
+/* 姓名下方的一行小字：工号 + 科室。颜色比姓名浅两档，
+   是"补充说明我是谁"，不能和姓名抢视线。 */
+.pmeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20rpx;
+  margin-top: 8rpx;
+}
+
+.pmeta-item {
+  font-size: 30rpx;
+  color: #9a9aa0;
+}
+
 /* ---------- 功能列表 ---------- */
 
 .cell {
@@ -105,6 +120,20 @@
   font-size: 38rpx;
 }
 
+/* 只读字段（工号）：显示值和输入框对齐，但不可点、不可改。
+   旁边跟一句「如需修改请联系管理员」，否则用户会一直找哪里能编辑。 */
+.field-readonly {
+  flex: 1;
+  font-size: 38rpx;
+  color: #6b6b70;
+}
+
+.field-note {
+  flex: none;
+  font-size: 28rpx;
+  color: #9a9aa0;
+}
+
 .field-picker {
   flex: 1;
 }
@@ -119,25 +148,26 @@
 
 /* ---------- 认领 ---------- */
 
-/* 电话栏：由用户自己在认领时填写，不是管理员导入的字段。
-   放在搜索框和名册列表之间——搜到自己、填上电话、再点名字认领，顺序自然。 */
-.claim-phone {
+/* 工号栏 / 电话栏：由用户自己在认领时填写，不由管理员导入。
+   放在搜索框和名册列表之间——搜到自己、填上工号和电话、再点名字认领，顺序自然。
+   工号在前：它决定"能不能认领成功"，电话只是联系方式。 */
+.claim-field {
   display: flex;
   align-items: center;
   gap: 16rpx;
   background: #f5f5f7;
   border-radius: 10rpx;
   padding: 0 20rpx;
-  margin-bottom: 20rpx;
+  margin-bottom: 16rpx;
 }
 
-.claim-phone-label {
+.claim-field-label {
   flex: none;
   font-size: 34rpx;
   color: #6b6b70;
 }
 
-.claim-phone-input {
+.claim-field-input {
   flex: 1;
   min-width: 0;
   padding: 20rpx 0;

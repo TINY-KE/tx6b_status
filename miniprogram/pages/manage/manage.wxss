@@ -33,8 +33,21 @@
   gap: 16rpx;
 }
 
+/* 添加区拆成了两行（上：姓名+工号，下：科室+按钮）——
+   四个控件挤一行时每格只有不到 160rpx，填的时候看不清自己打了什么 */
+.add-row + .add-row {
+  margin-top: 16rpx;
+}
+
+/* 科室选择器吃掉整行剩余宽度，与「添加」按钮同行 */
+.add-picker {
+  flex: 1;
+  min-width: 0;
+}
+
 .add-input {
   flex: 1;
+  min-width: 0;
   background: #f5f5f7;
   border-radius: 10rpx;
   padding: 18rpx;
@@ -117,6 +130,23 @@
 .pi-phone {
   font-size: 30rpx;
   color: #9a9aa0;
+}
+
+/* 工号：同上，且排在科室后面、电话前面——它比电话更常用（认领、核对身份） */
+.pi-jobno {
+  font-size: 30rpx;
+  color: #9a9aa0;
+}
+
+/* 「缺工号」标记：认领时要拿工号与名册比对，没有工号的人认领不了，
+   会来找管理员说"认领不上"。所以这里显式标出来，用琥珀色
+   （不占状态四色绿/黄/红/灰，不会被误读成某个在位状态）。 */
+.pi-nojobno {
+  font-size: 28rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  background: #fdf3d7;
+  color: #c08a00;
 }
 
 .pi-state {

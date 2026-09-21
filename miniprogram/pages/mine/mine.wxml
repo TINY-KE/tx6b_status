@@ -7,6 +7,12 @@
         <text class="pname">{{me.name}}</text>
         <text class="badge" wx:if="{{isAdmin}}">管理员</text>
       </view>
+      <!-- 工号与科室并排一行小字：它们都是"我是谁"的说明，不抢姓名的主位。
+           工号放在前面——同一部门里同名的人靠它区分。 -->
+      <view class="pmeta">
+        <text class="pmeta-item" wx:if="{{me.jobNo}}">工号 {{me.jobNo}}</text>
+        <text class="pmeta-item" wx:if="{{me.dept}}">{{me.dept}}</text>
+      </view>
     </view>
   </view>
 
@@ -49,6 +55,15 @@
         bindinput="onEditPhone"
       />
     </view>
+    <!-- 工号只读：它是管理员导入、本人在认领时用来自证身份的那份凭据。
+         允许本人改就等于把核对用的答案交到被核对的人手里。
+         写错了找管理员，在「名册管理」里改。
+         「未登记」这个兜底文案在 JS 里算好（editJobNoText）——WXML 里不写中文字面量。 -->
+    <view class="field">
+      <text class="field-label">工号</text>
+      <text class="field-readonly">{{editJobNoText}}</text>
+      <text class="field-note">如需修改请联系管理员</text>
+    </view>
     <view class="btn-primary" bindtap="saveEdit">保存</view>
     <view class="btn-plain cancel-btn" bindtap="cancelEdit">取消</view>
   </view>
@@ -60,6 +75,16 @@
     <view class="field">
       <text class="field-label">姓名</text>
       <input class="field-input" placeholder="请输入你的姓名" value="{{setupName}}" maxlength="20" bindinput="onSetupName" />
+    </view>
+    <view class="field">
+      <text class="field-label">工号</text>
+      <input
+        class="field-input"
+        placeholder="必填，2-20 位字母或数字"
+        value="{{setupJobNo}}"
+        maxlength="20"
+        bindinput="onSetupJobNo"
+      />
     </view>
     <view class="field">
       <text class="field-label">科室</text>
@@ -87,7 +112,7 @@
       <text class="claim-title">认领你的身份</text>
       <text class="claim-cancel" wx:if="{{joined}}" bindtap="cancelClaim">取消</text>
     </view>
-    <text class="claim-desc">从部门名册里找到你自己的名字，点一下就能认领</text>
+    <view class="claim-desc">从部门名册里找到你自己的名字，填上工号（用于核对身份）和电话，点名字就能认领</view>
 
     <input
       class="search-input"
@@ -96,10 +121,23 @@
       bindinput="onKeywordInput"
     />
 
-    <view class="claim-phone">
-      <text class="claim-phone-label">电话</text>
+    <!-- 工号要放在名册列表之前：用户需要先看到"要填什么"，再去列表里点自己的名字。
+         它必须与管理员导入名册时登记的工号一致，否则认领会失败。 -->
+    <view class="claim-field">
+      <text class="claim-field-label">工号</text>
       <input
-        class="claim-phone-input"
+        class="claim-field-input"
+        placeholder="必填，与名册登记的一致"
+        value="{{claimJobNo}}"
+        maxlength="20"
+        bindinput="onClaimJobNo"
+      />
+    </view>
+
+    <view class="claim-field">
+      <text class="claim-field-label">电话</text>
+      <input
+        class="claim-field-input"
         type="number"
         placeholder="必填，便于同事在外出时联系你"
         value="{{claimPhone}}"
