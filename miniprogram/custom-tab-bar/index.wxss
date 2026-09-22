@@ -9,6 +9,18 @@
   z-index: 100;
   display: flex;
   align-items: stretch;
+  /* ⚠️ 这一行必须留着，别删：app.wxss 里的 `view, text { box-sizing: border-box }`
+     是**标签名选择器**，按小程序官方说明它会影响到「页面和全部组件」——自定义 tabBar
+     也吃这条规则。于是 height:104rpx 会连下面的 padding-bottom(safe-area) 一起算进去：
+     iPhone 全面屏安全区约 68rpx，内容盒只剩 ~36rpx，而图标(44) + 文字(33.6) 要 83.6rpx。
+     .tab-item 是纵向 flex，两个子项默认 flex-shrink:1，空间不够就被**压扁**而不是溢出：
+       · 四宫格 44rpx → ~20rpx，两排在 align-content:space-between 下重叠 → 看着只有两个方块
+       · 笔 34rpx → ~15rpx，转 45° 后变成一横杠，不像笔
+       · 人像的头和肩挤在一起糊成一团
+     这就是「底部符号还是有问题」的根因。开发者工具与 Android 上 env() 为 0，所以看不出来。
+     各页面预留的底部空间本来就写的是 `104rpx + env(safe-area-inset-bottom)`，
+     即「104rpx 是内容高度、安全区额外加」——这里写成 content-box 才和页面口径一致。 */
+  box-sizing: content-box;
   height: 104rpx;
   background: #ffffff;
   border-top: 1rpx solid rgba(0, 0, 0, 0.08);
@@ -36,13 +48,23 @@
   align-items: center;
   justify-content: center;
   color: #8a8a8e;
+  /* 关键：不许被压扁。上面 box-sizing 那条万一再被人改回去，
+     这里保证最坏情况是「溢出/被裁」，而不是把图形压变形——
+     压变形是不报错的，只能靠真机截图才发现。 */
+  flex-shrink: 0;
 }
 
-/* 在位看板：2x2 四宫格。19 + 6 + 19 = 44，用 space-between 撑出 6rpx 间隙 */
+/* 在位看板：2x2 四宫格。19 + 6 + 19 = 44 */
 .ico-board {
   flex-wrap: wrap;
   align-content: space-between;
   justify-content: space-between;
+  /* 显式给间隙。只靠 align-content:space-between 的话，容器高度一旦不是 44rpx
+     （比如又被 box-sizing 压缩），两行会**重叠**成两个方块，而不是简单溢出。
+     支持 gap 的机型用 gap、不支持的仍由 space-between 兜底，两种都算得对：
+       容器正好 44rpx → 自由空间 0，space-between 自然失效，间距由 gap 给。 */
+  row-gap: 6rpx;
+  column-gap: 6rpx;
 }
 .ico-board .sq {
   width: 19rpx;
@@ -85,6 +107,8 @@
   font-size: 28rpx;
   line-height: 1.2;
   color: #8a8a8e;
+  /* 同 .tab-icon：行高被压缩时字会溢出自己的行盒，和图标叠在一起 */
+  flex-shrink: 0;
 }
 
 .tab-item.on .tab-text {

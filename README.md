@@ -310,7 +310,7 @@ const isFirst = claimedCount.total === 0 && adminCount.total === 0;
 图标都是 `view` 拼出来的几何图形，未选中灰色（`#8a8a8e`）、选中品牌蓝（`#185fa5`）；
 字号同步降到 28rpx（有图标后不需要那么大的字）。
 
-三个坑：
+四个坑：
 
 1. **图标不要再改回 `<image>` + 图片文件。** 这个坑踩过两次：
    本地 `.svg` 在真机上不显示（开发者工具里显示正常，真机一片空白而且**不报错**）；
@@ -330,6 +330,36 @@ const isFirst = claimedCount.total === 0 && adminCount.total === 0;
    里 `setData` 才纠正，中间会闪一下选中项。所以组件自己在 `attached` 和
    `pageLifetimes.show` 里按 `getCurrentPages()` 的当前路径算一次选中项，页面还没画出来就是对的。
    页面上原有的 `this.getTabBar().setData({ selected: n })` 保留，两条路都通。
+4. **`.tabbar` 必须显式写 `box-sizing: content-box`，`.tab-icon` / `.tab-text` 必须写
+   `flex-shrink: 0`。** 这是「底部图标在真机上被压扁」的根因，2026-09-22 修：
+
+   `app.wxss` 里有一条 `view, text { box-sizing: border-box }`。**它是标签名选择器，
+   按官方说明会影响到「页面和全部组件」——自定义 tabBar 也吃这条规则**（注意这和
+   「`page { --brand }` 的 CSS 变量级联不过来」是两回事，别混为一谈）。
+   于是 `.tabbar` 的 `height: 104rpx` 把下面的 `padding-bottom: env(safe-area-inset-bottom)`
+   一起算进了高度：iPhone 全面屏安全区约 68rpx，**内容盒只剩 ~36rpx**，
+   而图标(44rpx) + 间距(6rpx) + 文字行盒(33.6rpx) 要 83.6rpx。
+   `.tab-item` 是纵向 flex，两个子项默认 `flex-shrink: 1`，空间不够就被**压扁**而不是溢出：
+
+   | 图标 | 应有的样子 | 被压扁后 |
+   |---|---|---|
+   | 在位看板 | 2×2 四宫格 | 压到 ~20rpx，两排在 `align-content: space-between` 下**重叠**成两个方块 |
+   | 填写去向 | 一支斜放的笔 | 34rpx 压到 ~15rpx，转 45° 后变成一横杠 |
+   | 我的 | 圆头 + 半圆肩 | 头和肩挤在一起糊成一团 |
+
+   三条修改缺一不可：
+   - `.tabbar { box-sizing: content-box }` —— 让 104rpx 就是内容高度，安全区加在下面。
+     各页面预留的底部空间本来就写的是 `104rpx + env(safe-area-inset-bottom)`，
+     说明约定一直是「104rpx 是内容高度」——只有 `.tabbar` 自己没对上口径。
+   - `.tab-icon` / `.tab-text { flex-shrink: 0 }` —— 万一高度再算错，最坏是溢出/被裁，
+     **不会把图形压变形**（压变形不报错，只能靠真机截图发现）。
+   - `.ico-board { row-gap: 6rpx; column-gap: 6rpx }` —— 不再只靠 `align-content: space-between`
+     撑间隙；容器高度一旦不是 44rpx，`space-between` 会算出负的间距让两行重叠。
+
+   **为什么之前几轮排查都没抓到**：开发者工具和 Android 上 `env(safe-area-inset-bottom)`
+   求值为 0，内容盒正好 104rpx，一切正常；**只有 iPhone 全面屏真机才复现**。
+   现在 `presence-tabbar-ui-test.js` 用结构断言锁住这几点，并有一条「内容盒要装得下
+   44+6+33.6=83.6rpx」的算术检查，改高度会被拦住。
 
 ### 横向滚动的科室栏必须给死高度
 
