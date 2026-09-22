@@ -467,13 +467,52 @@ function computeMarks(mine, dates) {
 
 // ===== 考勤表（导出用）=====
 
-// 一个工作日拆成两个半天：上午 08:30-12:00、下午 12:00-18:00。
-// 考勤按半天记 0.5 天——这是全系统唯一以半天为单位的地方，
-// 看板与色条仍然在 30 分钟粒度上。
+// 一天的工作时段，用来算「请假占了多久」。
+//   上午 08:30-12:00（3.5 小时）+ 下午 12:00-18:00（6 小时）= 9.5 小时
+// ⚠️ 这两个格子用来取「落在工作时段内的交集」，不再代表「半天 = 0.5 天」。
 const HALVES = [
   { start: DAY_START_MINUTES, end: 12 * 60 },
   { start: 12 * 60, end: DAY_END_MINUTES },
 ];
+
+// 每天的工作分钟数（= 570 分钟 = 9.5 小时），折算的除数。
+// 从 HALVES 累加出来而不是写死 570，改了时段定义不用两处对账。
+const WORK_MINUTES_PER_DAY = HALVES.reduce((a, h) => a + (h.end - h.start), 0);
+
+// ===== 折算口径（2026-09-22 最终版，用户逐条确认）=====
+//
+//   ① 假期时长 X = 该类假落在工作时段内的时长（分钟）
+//   ② 整天数 = ⌊X ÷ 9.5h⌋，余数 A = X − 整天数 × 9.5h
+//   ③ 余数 A 分档： A ≤ 3h → 0 天
+//                  3h < A ≤ 6h → 0.5 天
+//                  6h < A → 1 天        （A 恒 < 9.5h）
+//   ④ 该类假天数 = 整天数 + 档值
+//   ⑤ 出勤 = Y − Σ各类假（Y = 该月工作日数）
+//
+// 为什么是「余数」而不是「X ÷ 9.5 后整体分档」：
+//   若拿商去分档，档函数封顶只有 1 天，请 2 个整天（19h）会只算出 1 天、
+//   整月全请也只会算出 1 天，出勤变成负数。所以整天必须先按 1 天/天拿走。
+//
+// ⚠️ 分档必然带来跳变（制度规定最小单位是 0.5 天，这是制度的定义而非缺陷）：
+//   - 请 3h = 0 天，但请 3h05m = 0.5 天；
+//   - 请 6h = 0.5 天，但请 6h05m = 1 天。
+//   边界取整后不会失真：上午半天 3.5h → 0.5 天、下午半天 6h → 0.5 天（上下午等值）、
+//   整天 9.5h → 1.00 天。**「整天 = 1.00 天」是锚点**，测试专门守着。
+//
+// 单位是「分钟」而不是「小时」：小时是浮点数，3h05m 写成 3.0833… 再比较会踩
+// 浮点误差（3.0833 > 3 与 185 > 180 一个能保证、一个不能）。
+const TIER_ZERO_MINUTES = 3 * 60; // ≤ 3h → 0 天
+const TIER_HALF_MINUTES = 6 * 60; // ≤ 6h → 0.5 天，超过 → 1 天
+
+// 把「落在工作时段内的分钟数」按上面的口径折成 0 / 0.5 / 1 / 1.5 … 天。
+function minutesToDays(minutes) {
+  if (!(minutes > 0)) return 0;
+  const whole = Math.floor(minutes / WORK_MINUTES_PER_DAY); // 整天数
+  const rest = minutes - whole * WORK_MINUTES_PER_DAY; // 余数（分钟）
+  if (rest <= TIER_ZERO_MINUTES) return whole;
+  if (rest <= TIER_HALF_MINUTES) return whole + 0.5;
+  return whole + 1;
+}
 
 // 导出表的假期列顺序（用户指定：出勤在前，其后假期按这个顺序）。
 // ⚠️ 顺序与 LEAVE_REASONS 不同（那份按使用频率排、事假病假在前），
@@ -481,42 +520,64 @@ const HALVES = [
 // %TEMP%/presence-attendance-test.js 有一条断言专门比对，改一处必须改另一处。
 const LEAVE_COLS = ['年休假', '探亲假', '婚假', '产假', '丧假', '事假', '病假'];
 
-// 某半天（0=上午 1=下午）的状态：返回假期类别名；返回 '' 表示按「出勤」计。
-//   出差（京内/京外）→ ''（计入出勤）
-//   请假且事由在 7 项白名单内 → 该事由
-//   请假但事由不合法（白名单上线前的老记录）→ ''（这条记录不计入任何一类，
-//     该半天落回默认在岗。用户口径：「老记录忽略不计」）
-function halfMark(mine, dateStr, halfIndex) {
-  const half = HALVES[halfIndex];
-  const base = dayStart(dateStr).getTime();
-  const hs = base + half.start * 60000;
-  const he = base + half.end * 60000;
-  // 与这个半天有交集的记录，取开始最早的一条。
-  // saveRecords 会把重叠的旧记录裁掉，正常最多命中一条，
-  // 这里排序只是防御——控制台手工灌的数据可能重叠。
-  const hit = mine
-    .filter((r) => {
-      if (r.type === 'office') return false;
-      const rs = new Date(r.startAt).getTime();
-      const re = new Date(r.endAt).getTime();
-      return rs < he && re > hs;
-    })
-    .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
-
-  if (!hit) return '';
-  if (hit.type !== 'leave') return '';
-  const note = (hit.note || '').trim();
-  return LEAVE_REASONS.indexOf(note) >= 0 ? note : '';
+// 折算出来的天数保留到 0.05 的刻度（用户指定），且不足 0.1 天记 0。
+// 为什么要有刻度：570 分钟 ÷ 9.5 小时 → 3.5 小时 = 0.3684…，直接写进 xlsx
+// 就是 0.3684210526315789，表格没法看。0.05 ≈ 28.5 分钟，够细。
+// 为什么 <0.1 归零：0.5 小时只有 0.0526 天，四舍五入后是 0.05，满表都是这种
+// 零星数字很吵；用户口径是「不足 0.1 天记 0」。
+// ⚠️ 2026-09-22 换成「余数分档」后，各假本来就只可能是 0.5 的倍数，
+// 这个函数只剩两个用途：① 汇总时的浮点尾巴规整；② 出勤的兜底归零。
+// 保留它是因为出勤走「减法倒推」，仍可能出现 0.05 级的尾部。
+function roundDays(v) {
+  const r = Math.round(v * 20) / 20;
+  return r < 0.1 ? 0 : r;
 }
 
-// 统计每人每天两半天的归属，返回可直接写进表格的行。
+// 某类假在该区间内落在工作时段里的**分钟数**。
+// 只累计**落在工作时段内**的部分：夜间、午休外、周末与节假日都不算，
+// 因为 dates 传进来的就是工作日，而每天只在 HALVES 两段里取交集。
+//   - 一条记录跨多天时逐日逐段切，天然只算工作日那几天；
+//   - 与某段有交集就算那一段的**实际时长**（不像旧算法「有交集就记整半天」）。
+// note 为 null 时累计所有请假（不分类），classification 由调用方按列分别调用。
+function leaveMinutes(mine, dates, note) {
+  let minutes = 0;
+  dates.forEach((d) => {
+    const base = dayStart(d).getTime();
+    HALVES.forEach((h) => {
+      const hs = base + h.start * 60000;
+      const he = base + h.end * 60000;
+      mine.forEach((r) => {
+        if (r.type !== 'leave') return;
+        if (note != null && (r.note || '').trim() !== note) return;
+        const rs = new Date(r.startAt).getTime();
+        const re = new Date(r.endAt).getTime();
+        const a = Math.max(rs, hs);
+        const b = Math.min(re, he);
+        if (b > a) minutes += (b - a) / 60000;
+      });
+    });
+  });
+  return minutes;
+}
+
+// 某类假折算出的天数 = 该假落在工作时段内的分钟数 → 余数分档（见 minutesToDays）。
+function leaveDays(mine, dates, note) {
+  return minutesToDays(leaveMinutes(mine, dates, note));
+}
+
+// 统计每人各类假的天数，返回可直接写进表格的行。
 //
-// 口径（与用户逐条确认过）：
-//   - 每个工作日的两个半天各 0.5 天，必然归入「出勤」或某一类假；
-//   - 没有任何记录 = 默认在岗 = 出勤（与看板「默认在岗」一致：不落库，但考勤算在岗）；
-//   - 出差（京内/京外）计入出勤；
-//   - 未认领的人不出现（没有 openid 就没有归属）；
-//   - 小计 = 出勤 + 各类假 = 统计区间的天数（恒等，用来保证不丢数）。
+// 口径（2026-09-22 最终版，与用户逐条确认过，详见 minutesToDays 上方注释）：
+//   - 假期时长 X = 各类假落在工作时段内的时长；
+//   - 天数 = ⌊X ÷ 9.5h⌋（整天）+ 余数分档（≤3h 记 0 / 3~6h 记 0.5 / >6h 记 1）；
+//   - 所以各列只可能是 0.5 的倍数，最小单位 0.5 天（与单位制度一致）；
+//   - **出勤 = Y − X总，用减法倒推**（Y = 该月工作日数）——这样
+//     「出勤 + 各类假 = Y」天然成立，不会因为两处独立累计而对不上账；
+//   - 出差（京内/京外）与在岗一样直接算在出勤里，**不折算、不占假期额度**；
+//   - 没有任何记录 = 默认在岗 = 出勤（与看板「默认在岗」一致）；
+//   - 请假但事由不在 7 项白名单内（白名单上线前的老记录）不计入任何一类，
+//     该时段落回默认在岗（用户口径：「老记录忽略不计」）；
+//   - 未认领的人不出现（没有 openid 就没有归属）。
 //
 // 独立成纯函数是为了让测试能抽出来单独跑（与 computeMarks 同一思路）。
 function buildAttendance(staffList, records, dates) {
@@ -532,16 +593,18 @@ function buildAttendance(staffList, records, dates) {
     .map((s) => {
       const mine = byOwner[s.openid] || [];
       const row = { jobNo: s.jobNo || '', name: s.name || '', dept: s.dept || '', office: 0 };
+      let leaveTotal = 0;
       LEAVE_COLS.forEach((c) => {
-        row[c] = 0;
+        // 每类假各自分档——**分档是逐类做的，不是先加总再分档**。
+        // 若先加总再分档，「上午事假 3.5h + 下午病假 6h」会合成 9.5h 算出 1 天，
+        // 反而比两类各自 0.5 + 0.5 更多，账就串了。
+        const days = leaveDays(mine, dates, c);
+        row[c] = days;
+        leaveTotal += days;
       });
-      dates.forEach((d) => {
-        for (let h = 0; h < HALVES.length; h++) {
-          const mark = halfMark(mine, d, h);
-          if (mark) row[mark] += 0.5;
-          else row.office += 0.5;
-        }
-      });
+      // 各列都是 0.5 的倍数，相加只可能带浮点尾巴（0.5 + 0.5 未必正好 1）。
+      leaveTotal = Math.round(leaveTotal * 2) / 2;
+      row.office = roundDays(dates.length - leaveTotal);
       row.total = dates.length;
       return row;
     });
@@ -1322,9 +1385,12 @@ function buildWorkbook(month, rows, dates) {
     return 10;
   };
 
-  // 半天粒度会产生 0.5 这类小数。先规整到一位小数再转字符串，
-  // 免得浮点误差写成 1.4999999999999998。
-  const num = (v) => (Math.round(Number(v) * 10) / 10).toString();
+  // 折算出来的天数只可能是 0.5 的倍数（最小单位 0.5 天），一位小数就装得下。
+  // 这里仍规整到**两位**，是为了兼容出勤列可能带的 0.05 级尾部
+  // （出勤走减法倒推，历史数据里可能留 0.65 / 1.35 这类旧口径的值）。
+  // ⚠️ 早先是 `* 10 / 10`（一位），换成 0.05 刻度口径且不改的话会**静默把
+  // 0.35 写成 0.4** —— 这类「旧口径的格式化函数残留」是改口径时最容易漏的地方。
+  const num = (v) => (Math.round(Number(v) * 100) / 100).toString();
   const cell = (col, row, value, styleId) => {
     const ref = colName(col) + row;
     if (typeof value === 'number') {

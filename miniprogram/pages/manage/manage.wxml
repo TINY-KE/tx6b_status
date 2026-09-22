@@ -110,7 +110,9 @@
 
     <view class="card">
       <view class="sec-title">导出月度考勤表</view>
-      <view class="hint-text">按工作日统计，一天拆成两个半天（上午 08:30-12:00、下午 12:00-18:00），各记 0.5 天。</view>
+      <view class="hint-text">按工作日统计，一天工作 9.5 小时（上午 08:30-12:00、下午 12:00-18:00），请假按实际时长折算，最小单位 0.5 天。</view>
+      <view class="hint-text">折算规则：整天算 1 天；不足一天的部分，3 小时以内记 0 天、3 到 6 小时记 0.5 天、超过 6 小时记 1 天。</view>
+      <view class="hint-text">因此上午半天和下午半天都记 0.5 天，整天记 1 天。</view>
       <view class="hint-text">没有登记的时段按「在岗」算；出差（京内 / 京外）计入出勤；请假按事由分别计入各类假。</view>
       <view class="hint-text">还没认领身份的人不会出现在表里。</view>
     </view>

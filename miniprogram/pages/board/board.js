@@ -1,5 +1,6 @@
 const dateUtil = require('../../utils/date');
 const statusUtil = require('../../utils/status');
+const shareUtil = require('../../utils/share');
 
 const DEPT_KEY = 'presence_last_dept';
 const PAGE_STEP = 24; // 一次渲染多少人，避免 100 人一次性铺开卡顿
@@ -508,5 +509,24 @@ Page({
 
   goMine() {
     wx.switchTab({ url: '/pages/mine/mine' });
+  },
+
+  // 右上角「··· → 转发给朋友」。
+  //
+  // ⚠️ 不定义这个函数，右上角菜单里的「转发给朋友」就是灰的——
+  // 官方 Page 文档原文：「只有定义了此事件处理函数，右上角菜单才会显示"转发"按钮」。
+  // 这个「灰」不报错、也不受账号认证或发布状态影响，只能靠定义它来解决。
+  //
+  // 只做「转发给朋友」，不做朋友圈：朋友圈进的是单页模式（无登录态、
+  // 云开发接口需单独开未登录访问），这个看板每屏数据都来自云函数，进去会是空的。
+  // 详见 utils/share.js 的文件头说明。
+  onShareAppMessage() {
+    return shareUtil.sharePayload([
+      {
+        // 看板自己就是落点，转发出去对方点开先看到今天的在位情况
+        path: shareUtil.HOME_PATH,
+        dateText: this.data.dateTitle,
+      },
+    ]);
   },
 });

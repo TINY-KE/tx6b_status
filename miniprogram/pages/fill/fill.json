@@ -1,4 +1,7 @@
 {
   "usingComponents": {},
-  "navigationBarTitleText": "填写去向"
+  "navigationBarTitleText": "填写去向",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "enableShareAppMessage": true
 }

@@ -2,5 +2,6 @@
   "usingComponents": {},
   "navigationBarTitleText": "在位看板",
   "enablePullDownRefresh": true,
-  "backgroundTextStyle": "dark"
+  "backgroundTextStyle": "dark",
+  "enableShareAppMessage": true
 }

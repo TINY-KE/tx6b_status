@@ -1,4 +1,5 @@
 const rosterUtil = require('../../utils/roster.js');
+const shareUtil = require('../../utils/share.js');
 
 Page({
   data: {
@@ -69,6 +70,40 @@ Page({
         this.loadClaimable('');
       }
     });
+  },
+
+  // 下拉刷新：重跑一遍身份初始化（app.refresh 会重新调 login 云函数，
+  // 顺带把 me / isAdmin / deptOptions / rosterEmpty 都刷新一遍）。
+  //
+  // ⚠️ 必须走 app.refresh()，不能只重新赋值 this.data：管理员在管理页改了
+  // 你的科室、或别人认领走了名字，这些变化都在 globalData 里，
+  // 光刷页面 data 会「看着刷新了、其实还是旧的」。
+  //
+  // catch 不能省：不兜住 reject，下面的 stopPullDownRefresh 就执行不到，
+  // 系统圆点会一直转、下拉刷新从此永久卡死。
+  onPullDownRefresh() {
+    const app = getApp();
+    app
+      .refresh()
+      .then((res) => {
+        const me = app.globalData.me;
+        const depts = (res && res.deptOptions) || [];
+        const rosterEmpty = !!app.globalData.rosterEmpty;
+        this.setData({
+          loading: false,
+          joined: !!me,
+          me,
+          initial: me && me.name ? me.name.slice(0, 1) : '',
+          isAdmin: app.globalData.isAdmin,
+          deptOptions: depts,
+          rosterEmpty,
+        });
+      })
+      .catch((err) => {
+        console.error('下拉刷新失败', err);
+        wx.showToast({ title: '刷新失败，请重试', icon: 'none' });
+      })
+      .then(() => wx.stopPullDownRefresh());
   },
 
   onSetupName(e) {
@@ -358,5 +393,16 @@ Page({
 
   goBoard() {
     wx.switchTab({ url: '/pages/board/board' });
+  },
+
+  // 右上角「··· → 转发给朋友」。
+  //
+  // 「我的」是**新同事最需要转发给别人**的一页（「你在哪？进这个小程序认领一下」），
+  // 但转发出去的落点仍然是看板：收到的人先看到内容，再自己决定去认领，
+  // 比一上来就要求他填工号的接受度高得多。
+  // ⚠️ 转发的标题里**不能带任何个人信息**（姓名 / 电话 / 工号）——
+  // 转发是发给第三方的，标题在聊天列表里就直接可见。
+  onShareAppMessage() {
+    return shareUtil.sharePayload([{ path: shareUtil.HOME_PATH }]);
   },
 });

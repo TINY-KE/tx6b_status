@@ -1,6 +1,7 @@
 const dateUtil = require('../../utils/date');
 const statusUtil = require('../../utils/status');
 const noteUtil = require('../../utils/note');
+const shareUtil = require('../../utils/share');
 
 // 起止日期跨度上限。出差最长按 30 天算，超过就拦下来，防止手滑选错月份。
 const SPAN_LIMIT_DAYS = 30;
@@ -148,6 +149,31 @@ Page({
       this.setData({ joined: !!me, meName: me ? me.name : '' });
       if (me) this.loadMine();
     });
+  },
+
+  // 下拉刷新：只重拉「我最近的记录」，别的一概不动。
+  //
+  // ⚠️ 这里**刻意不重算 dateMin / startDate / endDate**（不要去调 onLoad 里那套）。
+  // 那套里 dateMin 取的是「今天」，跨零点时重算会把用户正在填的日期下限往后推——
+  // 表现就是「我正在填表，表单自己变了一下」，比不刷新更让人困惑。
+  // 下拉刷新只负责数据同步，不该动用户手上的输入。
+  //
+  // 结尾的 catch 不能省：任一请求 reject 时没有兜底，
+  // 后面的 stopPullDownRefresh 就执行不到，系统圆点会一直转、下拉永久卡死。
+  onPullDownRefresh() {
+    const app = getApp();
+    app
+      .ensureReady()
+      .then(() => {
+        const me = app.globalData.me;
+        this.setData({ joined: !!me, meName: me ? me.name : '' });
+        return me ? this.loadMine() : null;
+      })
+      .catch((err) => {
+        console.error('下拉刷新失败', err);
+        wx.showToast({ title: '刷新失败，请重试', icon: 'none' });
+      })
+      .then(() => wx.stopPullDownRefresh());
   },
 
   // 算跨度文案，同时检查区间是否合法。
@@ -656,5 +682,16 @@ Page({
 
   goBoard() {
     wx.switchTab({ url: '/pages/board/board' });
+  },
+
+  // 右上角「··· → 转发给朋友」。
+  //
+  // 这一页的转发**刻意落到看板**而不是留在填写页：收到的人在群里更该先「看」
+  // （谁在哪），而不是一上来对着一个空白表单。而且填写页本身没有可分享的信息。
+  // 不定义它菜单里那一项就是灰的，见 utils/share.js 文件头。
+  onShareAppMessage() {
+    return shareUtil.sharePayload([
+      { path: shareUtil.HOME_PATH, dateText: dateUtil.today() },
+    ]);
   },
 });

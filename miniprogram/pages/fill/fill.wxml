@@ -124,7 +124,7 @@
          所以请假时**不给输入框**，事由只能从下面这 7 项里选一个（见 utils/note.js）。
          点一下选中、再点一下取消；提交时必须选中一项，否则提示「请选择请假事由」。 -->
     <view class="reason-box" wx:if="{{isLeave}}">
-      <view class="reason-tip">点一下选择（请假事由不支持自己填写）</view>
+      <!-- <view class="reason-tip">点一下选择（请假事由不支持自己填写）</view> -->
       <view class="reason-chips">
         <view
           class="reason-chip {{item.active}}"

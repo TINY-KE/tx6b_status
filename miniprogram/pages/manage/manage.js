@@ -4,6 +4,7 @@ const rosterUtil = require('../../utils/roster.js');
 const dateUtil = require('../../utils/date.js');
 const noteUtil = require('../../utils/note.js');
 const statusUtil = require('../../utils/status.js');
+const shareUtil = require('../../utils/share.js');
 
 // 管理员代填时可选的去向：比员工端多一个「在岗」——
 // 员工误报了请假（比如假条没批下来）时，得能把那些时段改回在岗。
@@ -1167,5 +1168,42 @@ Page({
         confirmText: '知道了',
       });
     }
+  },
+
+  // 下拉刷新：只刷「当前这个页签」看到的东西，不去刷另外三个页签的数据。
+  //
+  // 本页没有 onShow（只有 onLoad），从别处回到这一页不会自动更新——
+  // 所以下拉刷新在这一页比另外几页更必要，不是可有可无的装饰。
+  //
+  // ⚠️ 结尾必须 catch 兜住：任意一个请求 reject 时不 catch，
+  // 后面的 stopPullDownRefresh 就不会执行，系统那个圆点会一直转、
+  // 下拉刷新从此永久卡死（用户只能杀掉小程序）。
+  // 所以固定写法是 Promise.all([...]).catch(记录).then(停圈)——别再写成
+  // Promise.all([...]).then(停圈)，那条链上没有兜底。
+  onPullDownRefresh() {
+    const tab = this.data.tab;
+    const jobs = [];
+    // 名册列表是「记录管理」页签的人员来源，两个页签都要它
+    jobs.push(this.loadList());
+    if (tab === 'export') jobs.push(this.initExport());
+    if (tab === 'records') jobs.push(this.initRecords());
+    Promise.all(jobs)
+      .catch((err) => {
+        console.error('下拉刷新失败', err);
+        wx.showToast({ title: '刷新失败，请重试', icon: 'none' });
+      })
+      .then(() => wx.stopPullDownRefresh());
+  },
+
+  // 右上角「··· → 转发给朋友」。
+  //
+  // 这一页是**管理员**在用的，转发出去的落点同样是看板（不要转发管理页：
+  // 收到的人多半不是管理员，打开只会看到「仅管理员可用」）。
+  // ⚠️ 标题里绝不能带名册内容（人数、工号、电话）——转发是发给第三方的，
+  // 标题在聊天列表里直接可见，属于泄露内部名册。
+  onShareAppMessage() {
+    return shareUtil.sharePayload([
+      { path: shareUtil.HOME_PATH, dateText: this.data.expMonthText },
+    ]);
   },
 });

@@ -1,4 +1,7 @@
 {
   "usingComponents": {},
-  "navigationBarTitleText": "名册管理"
+  "navigationBarTitleText": "名册管理",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
+  "enableShareAppMessage": true
 }
