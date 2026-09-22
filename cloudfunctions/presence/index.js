@@ -1,4 +1,6 @@
 const cloud = require('wx-server-sdk');
+// 内置模块，用来压 xlsx 的 zip 容器（见文件末尾「手写 xlsx」一节）。
+const zlib = require('zlib');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -235,6 +237,8 @@ exports.main = async (event) => {
       return removeRecord(event, OPENID);
     case 'mine':
       return myRecords(OPENID);
+    case 'export':
+      return exportAttendance(event, OPENID);
     default:
       return { success: false, message: '未知操作' };
   }
@@ -368,6 +372,105 @@ function computeMarks(mine, dates) {
     });
     return hit ? hit.type : '';
   });
+}
+
+// ===== 考勤表（导出用）=====
+
+// 一个工作日拆成两个半天：上午 08:30-12:00、下午 12:00-18:00。
+// 考勤按半天记 0.5 天——这是全系统唯一以半天为单位的地方，
+// 看板与色条仍然在 30 分钟粒度上。
+const HALVES = [
+  { start: DAY_START_MINUTES, end: 12 * 60 },
+  { start: 12 * 60, end: DAY_END_MINUTES },
+];
+
+// 导出表的假期列顺序（用户指定：出勤在前，其后假期按这个顺序）。
+// ⚠️ 顺序与 LEAVE_REASONS 不同（那份按使用频率排、事假病假在前），
+// 所以不能直接拿 LEAVE_REASONS 当表头。两者必须是同一集合，
+// %TEMP%/presence-attendance-test.js 有一条断言专门比对，改一处必须改另一处。
+const LEAVE_COLS = ['年休假', '探亲假', '婚假', '产假', '丧假', '事假', '病假'];
+
+// 某半天（0=上午 1=下午）的状态：返回假期类别名；返回 '' 表示按「出勤」计。
+//   出差（京内/京外）→ ''（计入出勤）
+//   请假且事由在 7 项白名单内 → 该事由
+//   请假但事由不合法（白名单上线前的老记录）→ ''（这条记录不计入任何一类，
+//     该半天落回默认在岗。用户口径：「老记录忽略不计」）
+function halfMark(mine, dateStr, halfIndex) {
+  const half = HALVES[halfIndex];
+  const base = dayStart(dateStr).getTime();
+  const hs = base + half.start * 60000;
+  const he = base + half.end * 60000;
+  // 与这个半天有交集的记录，取开始最早的一条。
+  // saveRecords 会把重叠的旧记录裁掉，正常最多命中一条，
+  // 这里排序只是防御——控制台手工灌的数据可能重叠。
+  const hit = mine
+    .filter((r) => {
+      if (r.type === 'office') return false;
+      const rs = new Date(r.startAt).getTime();
+      const re = new Date(r.endAt).getTime();
+      return rs < he && re > hs;
+    })
+    .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
+
+  if (!hit) return '';
+  if (hit.type !== 'leave') return '';
+  const note = (hit.note || '').trim();
+  return LEAVE_REASONS.indexOf(note) >= 0 ? note : '';
+}
+
+// 统计每人每天两半天的归属，返回可直接写进表格的行。
+//
+// 口径（与用户逐条确认过）：
+//   - 每个工作日的两个半天各 0.5 天，必然归入「出勤」或某一类假；
+//   - 没有任何记录 = 默认在岗 = 出勤（与看板「默认在岗」一致：不落库，但考勤算在岗）；
+//   - 出差（京内/京外）计入出勤；
+//   - 未认领的人不出现（没有 openid 就没有归属）；
+//   - 小计 = 出勤 + 各类假 = 统计区间的天数（恒等，用来保证不丢数）。
+//
+// 独立成纯函数是为了让测试能抽出来单独跑（与 computeMarks 同一思路）。
+function buildAttendance(staffList, records, dates) {
+  const byOwner = {};
+  records.forEach((r) => {
+    if (!r._openid) return;
+    if (!byOwner[r._openid]) byOwner[r._openid] = [];
+    byOwner[r._openid].push(r);
+  });
+
+  const rows = staffList
+    .filter((s) => !!s.openid)
+    .map((s) => {
+      const mine = byOwner[s.openid] || [];
+      const row = { jobNo: s.jobNo || '', name: s.name || '', dept: s.dept || '', office: 0 };
+      LEAVE_COLS.forEach((c) => {
+        row[c] = 0;
+      });
+      dates.forEach((d) => {
+        for (let h = 0; h < HALVES.length; h++) {
+          const mark = halfMark(mine, d, h);
+          if (mark) row[mark] += 0.5;
+          else row.office += 0.5;
+        }
+      });
+      row.total = dates.length;
+      return row;
+    });
+
+  // 科室升序、科室内工号升序。名册的插入顺序没有业务含义，
+  // 而考勤表要给人看/存档，稳定可预期的顺序比「导入顺序」重要。
+  rows.sort((a, b) => {
+    if (a.dept !== b.dept) return a.dept < b.dept ? -1 : 1;
+    if (a.jobNo !== b.jobNo) return a.jobNo < b.jobNo ? -1 : 1;
+    if (a.name === b.name) return 0;
+    return a.name < b.name ? -1 : 1;
+  });
+
+  return rows;
+}
+
+async function checkAdmin(openid) {
+  if (!openid) return false;
+  const res = await db.collection('staff').where({ openid, isAdmin: true }).limit(1).get();
+  return res.data.length > 0;
 }
 
 // 第二屏：最近若干个工作日的分布。
@@ -669,3 +772,336 @@ async function fetchMyRecords(openid) {
 async function myRecords(openid) {
   return { success: true, list: await fetchMyRecords(openid) };
 }
+
+// ===== 导出考勤表 =====
+
+// ---------- 手写 xlsx（零依赖）----------
+//
+// **刻意不用 exceljs。** 它是个很重的包：云函数冷启动时 `require` 就要吃掉几百毫秒
+// 到 1 秒以上，加上生成与上传，在默认 3 秒超时下几乎必爆——实测报的就是「生成失败」。
+// 而 xlsx 的本质只是「一个 zip 容器 + 几个固定 XML」，node 自带的 zlib 压一下即可，
+// 生成耗时不到 10ms，还顺带免掉了「必须选『上传并部署：云端安装依赖』」这个反复踩的坑。
+// 代价是下面这一百多行，换来零第三方依赖。
+//
+// 生成的表：表头加粗 + 灰底、全表居中带细边框、首行冻结、固定列宽。
+
+// CRC32 查表（zip 每个成员都要带一个）。node 的 `zlib.crc32` 是 20.15 才加的，
+// 云函数运行时版本不确定，自己算最稳。
+const CRC_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  return t;
+})();
+
+function crc32(buf) {
+  let c = -1;
+  for (let i = 0; i < buf.length; i++) c = (c >>> 8) ^ CRC_TABLE[(c ^ buf[i]) & 0xff];
+  return (c ^ -1) >>> 0;
+}
+
+// zip 打包：一堆「内存里的文件」→ 一个 Buffer。
+// 只实现本地头 + 中央目录 + 结尾记录，省掉 zip64 / 注释 / 额外字段等用不到的分支。
+function zipFiles(files) {
+  const parts = [];
+  const central = [];
+  let offset = 0;
+
+  // DOS 时间戳。云函数跑在 UTC，加 8 小时才是本地时间；
+  // 它只影响 Excel 里显示的「修改时间」，但没必要让它错 8 小时。
+  const now = new Date(Date.now() + 8 * 3600000);
+  const dosTime = (now.getUTCHours() << 11) | (now.getUTCMinutes() << 5) | (now.getUTCSeconds() >> 1);
+  const dosDate =
+    ((now.getUTCFullYear() - 1980) << 9) | ((now.getUTCMonth() + 1) << 5) | now.getUTCDate();
+
+  files.forEach((f) => {
+    const name = Buffer.from(f.name, 'utf8');
+    const raw = Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data, 'utf8');
+    const deflated = zlib.deflateRawSync(raw);
+    const crc = crc32(raw);
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); // 本地文件头签名
+    local.writeUInt16LE(20, 4); // 解压所需版本
+    local.writeUInt16LE(0x0800, 6); // bit11：文件名按 UTF-8 解
+    local.writeUInt16LE(8, 8); // 压缩方式 8 = deflate
+    local.writeUInt16LE(dosTime, 10);
+    local.writeUInt16LE(dosDate, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(deflated.length, 18);
+    local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28); // 额外字段长度
+    parts.push(local, name, deflated);
+
+    const cen = Buffer.alloc(46);
+    cen.writeUInt32LE(0x02014b50, 0); // 中央目录项签名
+    cen.writeUInt16LE(20, 4); // 生成程序版本
+    cen.writeUInt16LE(20, 6); // 解压所需版本
+    cen.writeUInt16LE(0x0800, 8);
+    cen.writeUInt16LE(8, 10);
+    cen.writeUInt16LE(dosTime, 12);
+    cen.writeUInt16LE(dosDate, 14);
+    cen.writeUInt32LE(crc, 16);
+    cen.writeUInt32LE(deflated.length, 20);
+    cen.writeUInt32LE(raw.length, 24);
+    cen.writeUInt16LE(name.length, 28);
+    cen.writeUInt32LE(0, 38); // 外部属性
+    cen.writeUInt32LE(offset, 42); // 本地头在文件里的偏移
+    central.push(cen, name);
+
+    offset += local.length + name.length + deflated.length;
+  });
+
+  const cd = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); // 中央目录结尾签名
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(cd.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([Buffer.concat(parts), cd, end]);
+}
+
+// XML 文本转义。姓名、工号要写进 <t> 里，& 和 < 不转义会直接写坏文件。
+// 顺带剥掉 XML 1.0 不允许的控制字符（从别处粘贴带进来的 \x0b 之类）。
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// 1 → A、27 → AA。现在只有 12 列，写通用些免得以后加列踩边界。
+function colName(n) {
+  let s = '';
+  while (n > 0) {
+    s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+// 样式表。三个样式：0 默认 / 1 表头（加粗 + 灰底 + 边框）/ 2 数据（边框）。
+// ⚠️ fills 的前两项必须是 none 和 gray125，这是 Excel 的硬约定，少一个文件会被判为损坏。
+const XLSX_STYLES =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+  '<fonts count="2">' +
+  '<font><sz val="11"/><color theme="1"/><name val="等线"/></font>' +
+  '<font><b/><sz val="11"/><color theme="1"/><name val="等线"/></font>' +
+  '</fonts>' +
+  '<fills count="3">' +
+  '<fill><patternFill patternType="none"/></fill>' +
+  '<fill><patternFill patternType="gray125"/></fill>' +
+  '<fill><patternFill patternType="solid"><fgColor rgb="FFEFEFEF"/><bgColor indexed="64"/></patternFill></fill>' +
+  '</fills>' +
+  '<borders count="2">' +
+  '<border><left/><right/><top/><bottom/><diagonal/></border>' +
+  '<border><left style="thin"><color rgb="FFB0B0B0"/></left><right style="thin"><color rgb="FFB0B0B0"/></right>' +
+  '<top style="thin"><color rgb="FFB0B0B0"/></top><bottom style="thin"><color rgb="FFB0B0B0"/></bottom>' +
+  '<diagonal/></border>' +
+  '</borders>' +
+  '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+  '<cellXfs count="3">' +
+  '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+  '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">' +
+  '<alignment horizontal="center" vertical="center"/></xf>' +
+  '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1">' +
+  '<alignment horizontal="center" vertical="center"/></xf>' +
+  '</cellXfs>' +
+  // 不写这一句 Excel 也能打开，但 openpyxl 会警告「Workbook contains no default style」，
+  // 补上更规范（常规 = builtinId 0）。
+  '<cellStyles count="1"><cellStyle name="常规" xfId="0" builtinId="0"/></cellStyles>' +
+  '</styleSheet>';
+
+// 生成考勤表的 xlsx，返回 Buffer（文件由调用方上传）。
+// 第一行是表头，行数 = 1 + 人数。
+function buildWorkbook(month, rows, dates) {
+  // dates 只用来做参数防御（列数由 headers 决定），避免误删参数后无人察觉。
+  if (!dates || !dates.length) throw new Error('缺少统计日期');
+
+  const headers = ['序号', '工号', '姓名', '出勤'].concat(LEAVE_COLS).concat(['小计']);
+  const widthOf = (h) => {
+    if (h === '序号') return 6;
+    if (h === '工号') return 14;
+    if (h === '姓名') return 11;
+    return 10;
+  };
+
+  // 半天粒度会产生 0.5 这类小数。先规整到一位小数再转字符串，
+  // 免得浮点误差写成 1.4999999999999998。
+  const num = (v) => (Math.round(Number(v) * 10) / 10).toString();
+  const cell = (col, row, value, styleId) => {
+    const ref = colName(col) + row;
+    if (typeof value === 'number') {
+      return '<c r="' + ref + '" s="' + styleId + '"><v>' + num(value) + '</v></c>';
+    }
+    const text = value == null ? '' : String(value);
+    // 空值（比如还没补工号的人）写成空单元格，而不是空的 <is><t></t>：
+    // 空的 inlineStr 会让部分解析器把这格当成「不存在」，读回时看着像列错位。
+    if (text === '') return '<c r="' + ref + '" s="' + styleId + '"/>';
+    return (
+      '<c r="' + ref + '" s="' + styleId + '" t="inlineStr"><is><t xml:space="preserve">' +
+      esc(text) +
+      '</t></is></c>'
+    );
+  };
+
+  const rowXml = [
+    '<row r="1" ht="24" customHeight="1">' +
+      headers.map((h, j) => cell(j + 1, 1, h, 1)).join('') +
+      '</row>',
+  ];
+  rows.forEach((r, i) => {
+    const cells = [i + 1, r.jobNo, r.name, r.office]
+      .concat(LEAVE_COLS.map((c) => r[c]))
+      .concat([r.total]);
+    rowXml.push(
+      '<row r="' + (i + 2) + '" ht="20" customHeight="1">' +
+        cells.map((v, j) => cell(j + 1, i + 2, v, 2)).join('') +
+        '</row>'
+    );
+  });
+
+  const cols =
+    '<cols>' +
+    headers
+      .map(
+        (h, j) =>
+          '<col min="' + (j + 1) + '" max="' + (j + 1) + '" width="' + widthOf(h) + '" customWidth="1"/>'
+      )
+      .join('') +
+    '</cols>';
+
+  // ⚠️ worksheet 的子元素顺序是规定死的：sheetViews → sheetFormatPr → cols → sheetData。
+  // 调换顺序 Excel 会报「文件已损坏」。
+  const sheet =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    // 冻结首行：人多了往下滚还能看见表头
+    '<sheetViews><sheetView workbookViewId="0">' +
+    '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' +
+    '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>' +
+    '</sheetView></sheetViews>' +
+    '<sheetFormatPr defaultRowHeight="15"/>' +
+    cols +
+    '<sheetData>' + rowXml.join('') + '</sheetData>' +
+    '</worksheet>';
+
+  // 工作表名：31 字符上限，且不许含 []:*?/\
+  const sheetName = String(month).slice(0, 28).replace(/[\[\]:*?\/\\]/g, '-');
+
+  const contentTypes =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+    '</Types>';
+
+  const rootRels =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+    '</Relationships>';
+
+  const workbook =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheets><sheet name="' + esc(sheetName) + '" sheetId="1" r:id="rId1"/></sheets>' +
+    '</workbook>';
+
+  const workbookRels =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+    '</Relationships>';
+
+  return zipFiles([
+    { name: '[Content_Types].xml', data: contentTypes },
+    { name: '_rels/.rels', data: rootRels },
+    { name: 'xl/workbook.xml', data: workbook },
+    { name: 'xl/_rels/workbook.xml.rels', data: workbookRels },
+    { name: 'xl/styles.xml', data: XLSX_STYLES },
+    { name: 'xl/worksheets/sheet1.xml', data: sheet },
+  ]);
+}
+
+// 导出某月考勤表。只有管理员能导。
+//
+// dates 由小程序端算好传进来——工作日的判定依赖节假日表（holidays.js），
+// 那份数据只存在于小程序端；云函数再存一份就是第四个副本，必然会漏更新。
+//
+// 文件固定放在云存储 attendance/ 下、按月份命名：同一月份重复导出会覆盖上一次的
+// 文件，不会越积越多。
+async function exportAttendance(event, openid) {
+  if (!(await checkAdmin(openid))) return { success: false, message: '仅管理员可导出' };
+
+  // 兜住 runExport 内部抛出的异常，把原因回传。
+  // 以前这里是直接往外抛：云函数调用整体失败，前端只能显示笼统的「生成失败，请重试」，
+  // 等于什么都没说，出问题时无从下手（db 查询 / 建表 / 上传，三种挂法一个提示）。
+  // ⚠️ 这条路兜不住「云函数执行超时」——超时是平台终止进程、函数没机会 return，
+  // 只能由前端按 errCode 认出来（见 manage.js 的 doExport）。
+  try {
+    return await runExport(event);
+  } catch (e) {
+    console.error('[export] 导出失败', e);
+    return {
+      success: false,
+      message: '导出失败：' + ((e && (e.message || e.errMsg)) || '未知错误'),
+    };
+  }
+}
+
+// 真正的导出流程。单独拆出来，是为了让 exportAttendance 能统一兜异常。
+async function runExport(event) {
+  const month = String(event.month || '');
+  if (!/^\d{4}-\d{2}$/.test(month)) return { success: false, message: '月份格式不对' };
+
+  const dates = (event.dates || [])
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+  if (dates.length === 0) return { success: false, message: '该月没有可统计的工作日' };
+
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+
+  const staffList = await fetchAll('staff', { active: _.neq(false) });
+  // 只拉与统计区间相交的记录。跨月的长记录（如 8/30-9/2 出差）也要拉回来，
+  // 否则 9/1、9/2 会被当成「没有记录」而漏算出勤——并不会算错，但无法区分。
+  const records = await fetchAll('presence', {
+    startAt: _.lt(dayEnd(last)),
+    endAt: _.gt(dayStart(first)),
+  });
+
+  const rows = buildAttendance(staffList, records, dates);
+
+  // 手写 xlsx：同步、零依赖、毫秒级，所以这里不需要再兜「忘了云端安装依赖」。
+  const buffer = buildWorkbook(month, rows, dates);
+
+  const fileName = '考勤表-' + month + '.xlsx';
+  const up = await cloud.uploadFile({
+    cloudPath: 'attendance/' + fileName,
+    fileContent: buffer,
+  });
+
+  return {
+    success: true,
+    fileID: up.fileID,
+    fileName,
+    dayCount: dates.length,
+    peopleCount: rows.length,
+    lastDate: last,
+  };
+}
+

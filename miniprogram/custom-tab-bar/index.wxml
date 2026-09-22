@@ -1,5 +1,11 @@
 <!-- 自绘 tabBar：原生 tabBar 的文字大小无法用 WXSS 修改，
-     底部这一行用 icon + 文字自绘，选中态靠图标颜色 + 文字颜色区分。 -->
+     底部这一行用 icon + 文字自绘，选中态靠图标颜色 + 文字颜色区分。
+
+     图标为什么不用 <image>：
+       本地 .svg 在真机上不显示（开发者工具能显示，所以极难查）；
+       换成 .png 后依然空白。图片路径/打包/样式都排查过没有问题，
+       索性改成纯 WXSS 几何绘制——不依赖任何资源文件，工具和真机表现一致。
+       图形颜色统一用 currentColor，选中态只要改 .tab-item.on 上的 color。 -->
 <view class="tabbar">
   <view
     class="tab-item {{selected === index ? 'on' : ''}}"
@@ -8,11 +14,24 @@
     data-index="{{index}}"
     bindtap="onTap"
   >
-    <image
-      class="tab-icon"
-      src="{{selected === index ? item.activeIcon : item.icon}}"
-      mode="aspectFit"
-    />
+    <view class="tab-icon ico-{{item.ico}}">
+      <!-- 在位看板：2x2 四宫格 -->
+      <block wx:if="{{item.ico === 'board'}}">
+        <view class="sq"></view>
+        <view class="sq"></view>
+        <view class="sq"></view>
+        <view class="sq"></view>
+      </block>
+      <!-- 填写去向：一支斜放的笔 -->
+      <block wx:elif="{{item.ico === 'fill'}}">
+        <view class="pen"></view>
+      </block>
+      <!-- 我的：头 + 肩 -->
+      <block wx:else>
+        <view class="head"></view>
+        <view class="shoulder"></view>
+      </block>
+    </view>
     <text class="tab-text">{{item.text}}</text>
   </view>
 </view>

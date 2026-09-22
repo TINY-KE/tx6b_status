@@ -1,6 +1,11 @@
 // 名册文本的解析与工号规范化都在 utils/roster.js 里（纯函数，可单测）。
 // 这里只负责把解析结果接进页面。
 const rosterUtil = require('../../utils/roster.js');
+const dateUtil = require('../../utils/date.js');
+
+function pad2(n) {
+  return n < 10 ? '0' + n : '' + n;
+}
 
 Page({
   data: {
@@ -28,6 +33,20 @@ Page({
     previewText: '',
 
     importing: false,
+
+    // 考勤导出
+    expMonth: '',
+    expMonthText: '',
+    expSummary: '',
+    expDates: [],
+    exportBtnText: '生成考勤表',
+    exporting: false,
+    minMonth: '',
+    maxMonth: '',
+    // 生成好的本地文件（绝对路径，带 .xlsx 后缀）。转发按钮只在它非空时出现。
+    readyPath: '',
+    readyName: '',
+    readyText: '',
   },
 
   onLoad() {
@@ -43,6 +62,220 @@ Page({
         ),
       });
       this.loadList();
+      this.initExport();
+    });
+  },
+
+  // 导出默认落在这个月（只统计到今天）。可选范围：往前 12 个月 ~ 本月，
+  // 不允许选未来——未来的考勤表没有意义，只会导出一张「全员在岗」的空表。
+  initExport() {
+    const today = dateUtil.today();
+    const month = today.slice(0, 7);
+    const y = Number(today.slice(0, 4));
+    const m = Number(today.slice(5, 7));
+    this.setData({
+      minMonth: y - 1 + '-' + pad2(m),
+      maxMonth: month,
+    });
+    this.applyMonth(month);
+  },
+
+  // 换月份：就地重算「这个月要统计哪几天」。
+  //
+  // 为什么日期在小程序端算：工作日的判定依赖节假日表（utils/holidays.js），
+  // 那份数据只存在于小程序端，云函数里再存一份就是第四个副本（必然漏更新）。
+  // 与「区间视图的日期由前端算好再传给云函数」同一个思路。
+  applyMonth(month) {
+    const today = dateUtil.today();
+    const isCurrent = month === today.slice(0, 7);
+    // 只统计到今天：当月的未来工作日不进表；过去的月份取满月
+    const dates = dateUtil.monthWorkdays(month, isCurrent ? today : month + '-31');
+    const last = dates.length ? dates[dates.length - 1] : '';
+    this.setData({
+      expMonth: month,
+      expMonthText: dateUtil.monthLabel(month),
+      expDates: dates,
+      expSummary: dates.length
+        ? '该月工作日 ' + dates.length + ' 天，统计至 ' + dateUtil.dayDisplay(last)
+        : '该月还没有可统计的工作日',
+      exportBtnText: dates.length ? '生成考勤表' : '该月无工作日',
+      // 换了月份，之前生成的文件就作废了——不清掉的话，
+      // 会出现「选着 9 月、转发出去的却是 8 月那张表」。
+      readyPath: '',
+      readyName: '',
+      readyText: '',
+    });
+  },
+
+  onMonthChange(e) {
+    const month = String(e.detail.value || '').slice(0, 7);
+    if (month) this.applyMonth(month);
+  },
+
+  // 第一步：生成考勤表并下载到本地。
+  //
+  // ⚠️ 为什么生成和转发必须分成两次点击，而不是「点一下 → 生成完自动弹转发面板」：
+  // wx.shareFileMessage 要求由**用户点击手势**直接触发，中间夹着
+  // `await callFunction` + `await downloadFile` 两段异步，手势上下文就丢了，
+  // 真机上会报 `shareFileMessage:fail can only be invoked by user TAP gesture`
+  // ——表现就是一句无从下手的「转发未完成」。
+  // 所以这里只负责把文件准备好，转发交给下一步的按钮（那个处理函数里
+  // shareFileMessage 是同步第一句，手势完整）。
+  async doExport() {
+    if (this.data.exporting) return;
+    const dates = this.data.expDates;
+    if (!dates.length) {
+      wx.showToast({ title: '该月没有可统计的工作日', icon: 'none' });
+      return;
+    }
+    const month = this.data.expMonth;
+    this.setData({ exporting: true, exportBtnText: '生成中…' });
+    wx.showLoading({ title: '生成考勤表', mask: true });
+    try {
+      const { result } = await wx.cloud.callFunction({
+        name: 'presence',
+        data: { action: 'export', month, dates },
+      });
+      if (!result || !result.success) {
+        wx.hideLoading();
+        const msg = (result && result.message) || '生成失败';
+        wx.showToast({
+          title: msg === '未知操作' ? '请先部署 presence 云函数' : msg,
+          icon: 'none',
+        });
+        return;
+      }
+      const local = await this.saveLocal(result.fileID, result.fileName || '考勤表-' + month + '.xlsx');
+      wx.hideLoading();
+      this.setData({
+        readyPath: local.path,
+        readyName: local.name,
+        readyText: '已生成 ' + local.name + '，点下方按钮转发给需要的人。',
+      });
+    } catch (err) {
+      wx.hideLoading();
+      console.error('导出考勤表失败', err);
+      // 超时是平台直接终止云函数、函数没机会 return，所以只能在这一层认出来。
+      // 生成已经改成零依赖的手写 xlsx（毫秒级，见云函数里的「手写 xlsx」注释），
+      // 原来最吃时间的 exceljs 冷启动已经没有了；这条兜底留给数据量特别大的极端情况。
+      const raw = (err && (err.errMsg || err.message)) || '';
+      const isTimeout = /timeout|timed out|-504003/i.test(raw);
+      wx.showModal({
+        title: isTimeout ? '云函数执行超时' : '导出失败',
+        content: isTimeout
+          ? '云函数执行超过了超时时间（默认 3 秒）。请到云开发控制台 → 云函数 → presence → 配置，把「超时时间」调成 60 秒后重试。'
+          : '原因：' + (raw || '未知') + '\n\n详细报错可在云开发控制台 → 云函数 → presence → 日志里查看。',
+        showCancel: false,
+        confirmText: '知道了',
+      });
+    } finally {
+      // 已经有文件时按钮变「重新生成」（并降级成描边样式），
+      // 把视觉重心让给蓝色的「转发到微信」——两个实心蓝按钮叠着容易点错。
+      this.setData({
+        exporting: false,
+        exportBtnText: this.data.expDates.length
+          ? this.data.readyPath
+            ? '重新生成'
+            : '生成考勤表'
+          : '该月无工作日',
+      });
+    }
+  },
+
+  // 把云存储里的 xlsx 下载下来，落到用户目录里一个**带 .xlsx 后缀**的固定路径。
+  //
+  // 为什么不直接用 cloud.downloadFile 的 tempFilePath 去转发：
+  // 那个临时路径没有后缀，微信（以及收到文件的人）按后缀判类型，
+  // 会得到一个「打不开」的无名文件。落到带后缀的路径上两个问题一起解决。
+  saveLocal(fileID, fileName) {
+    return new Promise((resolve, reject) => {
+      wx.cloud.downloadFile({
+        fileID,
+        success: (res) => {
+          try {
+            const fs = wx.getFileSystemManager();
+            const path = wx.env.USER_DATA_PATH + '/' + fileName;
+            // 同一月份重复导出会覆盖；换月份生成的新文件也用同一个目录，
+            // 顺手清掉上一张，免得用户目录里越堆越多（上限 200MB）。
+            try {
+              const olds = fs.readdirSync(wx.env.USER_DATA_PATH) || [];
+              olds.forEach((f) => {
+                if (f.indexOf('考勤表-') === 0 && f !== fileName) {
+                  try {
+                    fs.unlinkSync(wx.env.USER_DATA_PATH + '/' + f);
+                  } catch (e) {
+                    // 删不掉就算了，不能因为清理失败让导出失败
+                  }
+                }
+              });
+            } catch (e) {
+              // readdirSync 在个别机型上可能不可用，忽略
+            }
+            try {
+              fs.unlinkSync(path);
+            } catch (e) {
+              // 目标不存在时会抛，属于正常情况
+            }
+            fs.copyFileSync(res.tempFilePath, path);
+            resolve({ path, name: fileName });
+          } catch (e) {
+            console.error('保存考勤表到本地失败', e);
+            reject(e);
+          }
+        },
+        fail: (err) => {
+          console.error('下载考勤表失败', err);
+          reject(err);
+        },
+      });
+    });
+  },
+
+  // 第二步：转发。处理函数里**不允许有任何 await / 异步前置**——
+  // wx.shareFileMessage 必须落在这次点击的手势上下文里，否则真机上直接 fail。
+  // 所以这里只读已存好的路径，然后同步调用。
+  shareExport() {
+    const filePath = this.data.readyPath;
+    if (!filePath) {
+      wx.showToast({ title: '请先生成考勤表', icon: 'none' });
+      return;
+    }
+    const fileName = this.data.readyName;
+    // 开发者工具和 PC 版微信都不支持这个接口，提前认出来给句人话，
+    // 不然用户只会看到一句「转发未完成」。
+    const info = (wx.getDeviceInfo ? wx.getDeviceInfo() : wx.getSystemInfoSync()) || {};
+    const platform = info.platform || '';
+    if (platform !== 'android' && platform !== 'ios') {
+      wx.showModal({
+        title: '当前环境不支持转发',
+        content:
+          '微信转发面板只能在手机微信里调起（开发者工具、PC / Mac 版微信都不支持）。' +
+          '请用手机扫码「真机预览」后再点这个按钮。文件已生成好，在手机上重新点一次即可。',
+        showCancel: false,
+        confirmText: '知道了',
+      });
+      return;
+    }
+    wx.shareFileMessage({
+      filePath,
+      fileName,
+      success: () => {
+        wx.showToast({ title: '已发送', icon: 'success' });
+      },
+      fail: (err) => {
+        const msg = (err && err.errMsg) || '';
+        // 用户自己在转发面板点了取消，不算失败，不要弹错误提示
+        if (/cancel/i.test(msg)) return;
+        console.error('转发考勤表失败', err);
+        // 以前这里只弹一句「转发未完成」，把真实原因吞了。
+        // 现在把原始 errMsg 原样给出来——那句话是唯一能定位的线索。
+        wx.showModal({
+          title: '转发失败',
+          content: '原因：' + (msg || '未知') + '\n\n可截图发给开发者定位。',
+          showCancel: false,
+          confirmText: '知道了',
+        });
+      },
     });
   },
 

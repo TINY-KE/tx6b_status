@@ -168,6 +168,36 @@ function daysBetween(a, b) {
   return Math.round((dayStartTs(b) - dayStartTs(a)) / 86400000);
 }
 
+// 'YYYY-MM' -> 该月内所有工作日，按时间正序。
+// maxDate 给定时只取到那天（含）——导出考勤表只统计到「今天」，
+// 未来的工作日不该出现在表里。
+//
+// 为什么在前端算好再传给云函数：云函数那边没有节假日表
+// （holidays.js 是唯一数据源，云函数再存一份就是第四个副本，必然漏更新），
+// 这与「区间视图的日期由前端算好再传」是同一个思路。
+function monthWorkdays(monthStr, maxDate) {
+  const parts = String(monthStr || '').split('-');
+  const year = Number(parts[0]);
+  const month = Number(parts[1]);
+  if (!year || !month) return [];
+  // 下个月的第 0 天 = 这个月的最后一天，用它取当月天数
+  const total = new Date(year, month, 0).getDate();
+  const out = [];
+  for (let i = 1; i <= total; i++) {
+    const d = year + '-' + pad(month) + '-' + pad(i);
+    if (maxDate && d > maxDate) break;
+    if (isWorkday(d)) out.push(d);
+  }
+  return out;
+}
+
+// '2026-09' -> '2026年9月'
+function monthLabel(monthStr) {
+  const parts = String(monthStr || '').split('-');
+  if (!parts[0] || !parts[1]) return '';
+  return parts[0] + '年' + Number(parts[1]) + '月';
+}
+
 // '2026-09-14' -> '今天 9月14日' / '明天 9月15日' / '9月20日 周日'
 function dayLabel(dateStr) {
   const rel = dayRelativeText(dateStr);
@@ -196,5 +226,7 @@ module.exports = {
   dayRelativeText,
   addDays,
   daysBetween,
+  monthWorkdays,
+  monthLabel,
   dayLabel,
 };

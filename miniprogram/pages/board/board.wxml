@@ -94,26 +94,20 @@
       >{{item.label}}</view>
     </scroll-view>
 
-
-
-    <view class="stats" wx:if="{{stats}}">
-      <view class="stat">
-        <text class="stat-num st-office">{{stats.office}}</text>
-        <text class="stat-label">在岗</text>
-      </view>
-      <view class="stat">
-        <text class="stat-num st-meeting">{{stats.meeting}}</text>
-        <text class="stat-label">京内出差</text>
-      </view>
-      <view class="stat">
-        <text class="stat-num st-trip">{{stats.trip}}</text>
-        <text class="stat-label">京外出差</text>
-      </view>
-      <view class="stat">
-        <text class="stat-num st-leave">{{stats.leave}}</text>
-        <text class="stat-label">请假</text>
-      </view>
+    <!-- 图例：说明四种状态的颜色。放在 header 里（不随列表滚动）。
+         前四项色点复用时间轴的 .dot + .d-*，和统计数字 / 色条 / 月视图共用同一套色值，
+         所以这里不写死颜色。
+         第五项是月视图的「非工作日」标记：月视图里周末和法定节假日共用同一种表现
+         （空心格 .mc-rest），所以合并成一项；并且用方框而不是圆点——
+         形状不同才不会和上面四种实心圆点混成「第五种状态」。 -->
+    <view class="legend">
+      <view class="lg-item"><view class="dot d-office"></view><text>在岗</text></view>
+      <view class="lg-item"><view class="dot d-meeting"></view><text>京内出差</text></view>
+      <view class="lg-item"><view class="dot d-trip"></view><text>京外出差</text></view>
+      <view class="lg-item"><view class="dot d-leave"></view><text>请假</text></view>
+      <view class="lg-item"><view class="lg-sq"></view><text>周末/节假日</text></view>
     </view>
+
     <view class="screen-tabs">
       <view class="screen-tab {{screenIndex === 0 ? 'on' : ''}}" data-i="0" bindtap="onScreenTap">今天</view>
       <view class="screen-tab {{screenIndex === 1 ? 'on' : ''}}" data-i="1" bindtap="onScreenTap">3个工作日</view>
@@ -124,8 +118,33 @@
 
   <swiper class="swiper" current="{{screenIndex}}" bindchange="onSwiperChange" duration="{{200}}">
 
-    <swiper-item class="sw-item">
-      <scroll-view class="scroll" scroll-y bindscrolltolower="onScrollLower">
+    <!-- 今天屏：统计卡的四项只统计「今天」（走 presence 的 action=day），
+         所以它只属于这一屏——切到 3/7/一个月 时跟着 swiper 一起滑走。
+         位置在页签正下方，且放在 scroll-view 外面：滚动名单时它不动，
+         与「图例固定在 header、不随列表滚动」同一个理由。
+         swiper-item 本身不是 flex 容器，stats 下面直接放 height:100% 的
+         scroll-view 会溢出到屏幕外，所以这里显式纵向 flex + 名单区 flex:1。 -->
+    <swiper-item class="sw-item today-screen">
+      <view class="stats" wx:if="{{stats}}">
+        <view class="stat">
+          <text class="stat-num st-office">{{stats.office}}</text>
+          <text class="stat-label">在岗</text>
+        </view>
+        <view class="stat">
+          <text class="stat-num st-meeting">{{stats.meeting}}</text>
+          <text class="stat-label">京内出差</text>
+        </view>
+        <view class="stat">
+          <text class="stat-num st-trip">{{stats.trip}}</text>
+          <text class="stat-label">京外出差</text>
+        </view>
+        <view class="stat">
+          <text class="stat-num st-leave">{{stats.leave}}</text>
+          <text class="stat-label">请假</text>
+        </view>
+      </view>
+
+      <scroll-view class="scroll today-scroll" scroll-y bindscrolltolower="onScrollLower">
 
         <view class="axis-row">
           <view class="name-col"></view>

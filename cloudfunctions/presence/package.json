@@ -1,7 +1,7 @@
 {
   "name": "presence",
   "version": "1.0.0",
-  "description": "去向记录的查询与写入",
+  "description": "去向记录的查询与写入、考勤表导出",
   "main": "index.js",
   "dependencies": {
     "wx-server-sdk": "~2.6.3"

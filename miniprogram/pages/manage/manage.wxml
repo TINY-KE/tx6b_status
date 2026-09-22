@@ -3,6 +3,7 @@
   <view class="tabs">
     <view class="tab {{tab === 'list' ? 'on' : ''}}" data-tab="list" bindtap="onTabChange">名册（{{list.length}}）</view>
     <view class="tab {{tab === 'import' ? 'on' : ''}}" data-tab="import" bindtap="onTabChange">批量导入</view>
+    <view class="tab {{tab === 'export' ? 'on' : ''}}" data-tab="export" bindtap="onTabChange">考勤导出</view>
   </view>
 
   <block wx:if="{{tab === 'list'}}">
@@ -78,7 +79,7 @@
 
   </block>
 
-  <block wx:else>
+  <block wx:elif="{{tab === 'import'}}">
 
     <view class="card">
       <view class="sec-title">粘贴部门名册</view>
@@ -100,6 +101,42 @@
       <view class="sec-title">清空重来</view>
       <view class="hint-text">导入出错时可以清空重来，只会删掉还没人认领的记录，已认领的人不受影响。</view>
       <view class="danger-btn" bindtap="clearUnclaimed">清空未认领名册</view>
+    </view>
+
+  </block>
+
+  <block wx:elif="{{tab === 'export'}}">
+
+    <view class="card">
+      <view class="sec-title">导出月度考勤表</view>
+      <view class="hint-text">按工作日统计，一天拆成两个半天（上午 08:30-12:00、下午 12:00-18:00），各记 0.5 天。</view>
+      <view class="hint-text">没有登记的时段按「在岗」算；出差（京内 / 京外）计入出勤；请假按事由分别计入各类假。</view>
+      <view class="hint-text">还没认领身份的人不会出现在表里。</view>
+    </view>
+
+    <view class="card">
+      <view class="sec-title">选择月份</view>
+      <picker
+        mode="date"
+        fields="month"
+        value="{{expMonth}}"
+        start="{{minMonth}}"
+        end="{{maxMonth}}"
+        bindchange="onMonthChange"
+      >
+        <view class="month-pick">
+          <text class="month-text">{{expMonthText}}</text>
+          <text class="month-switch">切换月份</text>
+        </view>
+      </picker>
+      <view class="exp-summary">{{expSummary}}</view>
+      <view class="exp-btn {{exporting ? 'btn-disabled' : ''}} {{readyPath ? 'btn-plain' : 'btn-primary'}}" bindtap="doExport">{{exportBtnText}}</view>
+      <!-- 生成与转发分成两次点击：wx.shareFileMessage 必须落在用户点击的手势里，
+           中间隔了「调云函数 + 下载」两段异步会丢手势，真机上直接 fail。
+           详见 manage.js 的 doExport / shareExport 注释。 -->
+      <view class="ready-text" wx:if="{{readyPath}}">{{readyText}}</view>
+      <view class="btn-primary share-btn" wx:if="{{readyPath}}" bindtap="shareExport">转发到微信</view>
+      <view class="hint-text">先点「生成考勤表」，生成完再点「转发到微信」。转发面板只在手机微信里出现（开发者工具与电脑版微信不支持），同一月份重复导出会覆盖上一次的文件。</view>
     </view>
 
   </block>

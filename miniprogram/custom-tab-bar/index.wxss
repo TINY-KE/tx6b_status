@@ -24,11 +24,62 @@
   justify-content: center;
 }
 
+/* ---------- 图标（纯 WXSS 绘制，不用图片） ----------
+   三个图标都在 44rpx x 44rpx 的盒子里用 flex 摆出来，
+   颜色一律 background: currentColor，所以选中态只需要改 color。 */
+
 .tab-icon {
   width: 44rpx;
   height: 44rpx;
   margin-bottom: 6rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8a8a8e;
 }
+
+/* 在位看板：2x2 四宫格。19 + 6 + 19 = 44，用 space-between 撑出 6rpx 间隙 */
+.ico-board {
+  flex-wrap: wrap;
+  align-content: space-between;
+  justify-content: space-between;
+}
+.ico-board .sq {
+  width: 19rpx;
+  height: 19rpx;
+  border-radius: 4rpx;
+  background: currentColor;
+}
+
+/* 填写去向：一支斜放的笔（上端圆角、下端略尖，旋转 45°） */
+.ico-fill .pen {
+  width: 10rpx;
+  height: 34rpx;
+  border-radius: 5rpx 5rpx 2rpx 2rpx;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+/* 我的：圆头 + 上半圆肩 */
+.ico-mine {
+  flex-direction: column;
+}
+.ico-mine .head {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ico-mine .shoulder {
+  width: 32rpx;
+  height: 16rpx;
+  /* 上圆下平，就是肩的形状 */
+  border-radius: 16rpx 16rpx 0 0;
+  background: currentColor;
+  margin-top: 3rpx;
+}
+
+/* ---------- 文字与选中态 ---------- */
 
 .tab-text {
   font-size: 28rpx;
@@ -39,4 +90,9 @@
 .tab-item.on .tab-text {
   color: #185fa5;
   font-weight: 600;
+}
+
+/* 选中态：图标和文字一起变蓝。图标靠 currentColor 继承，这一行同时管三者 */
+.tab-item.on .tab-icon {
+  color: #185fa5;
 }

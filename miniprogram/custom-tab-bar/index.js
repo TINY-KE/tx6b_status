@@ -1,10 +1,14 @@
+// 图标不用图片文件，由 index.wxss 用纯 CSS 画（.ico-board / .ico-fill / .ico-mine）。
+// 原因：本地 .svg 在真机上不显示；换成 .png 后依然空白，而路径、打包配置、
+// 样式都排查过没有问题。改成几何绘制后不再依赖任何资源文件，也不会再有这类坑。
+// 要换图标形状就改 wxss，不用碰这里；assets/tabbar/ 下的图已是废弃资源。
 Component({
   data: {
     selected: 0,
     list: [
-      { pagePath: '/pages/board/board', text: '在位看板', icon: '/assets/tabbar/board-normal.svg', activeIcon: '/assets/tabbar/board-active.svg' },
-      { pagePath: '/pages/fill/fill', text: '填写去向', icon: '/assets/tabbar/fill-normal.svg', activeIcon: '/assets/tabbar/fill-active.svg' },
-      { pagePath: '/pages/mine/mine', text: '我的', icon: '/assets/tabbar/mine-normal.svg', activeIcon: '/assets/tabbar/mine-active.svg' },
+      { pagePath: '/pages/board/board', text: '在位看板', ico: 'board' },
+      { pagePath: '/pages/fill/fill', text: '填写去向', ico: 'fill' },
+      { pagePath: '/pages/mine/mine', text: '我的', ico: 'mine' },
     ],
   },
 

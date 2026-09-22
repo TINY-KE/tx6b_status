@@ -58,19 +58,31 @@
   color: #6b6b70;
 }
 
+/* 科室栏是横向 scroll-view。
+   ⚠️ 必须给死高度：scroll-view 高度为 auto 时内部滚动层会算错，
+   chip 顶部被削掉一条——真机上表现为药丸上缘是平的、像被上方日期压住。
+   chip 也一并给死高度 + line-height:1，不依赖字体行高的计算结果，
+   否则以后调字号时行高变了而容器高度没变，又会裁。 */
 .dept-bar {
   display: flex;
   align-items: center;
-  padding: 16rpx 24rpx 18rpx;
+  height: 108rpx;
+  box-sizing: border-box;
+  padding: 0 24rpx;
   white-space: nowrap;
 }
 
 .dept-chip {
   flex: none;
-  padding: 14rpx 28rpx;
+  display: flex;
+  align-items: center;
+  height: 72rpx;
+  box-sizing: border-box;
+  padding: 0 28rpx;
   margin-right: 18rpx;
   border-radius: 100rpx;
   font-size: 32rpx;
+  line-height: 1;
   color: #6b6b70;
   background: #f1efe8;
 }
@@ -160,6 +172,22 @@
 .scroll {
   height: 100%;
   background: #ffffff;
+}
+
+/* 今天屏：顶部统计卡 + 下面可滚动的名单。
+   stats 只统计今天，所以只挂在这一屏（见 board.wxml）。
+   白底跟着 .scroll 一致，否则 swiper-item 透明、会露出页面灰底。
+   swiper-item 默认不是 flex 容器：stats 之下再放 height:100% 的 scroll-view
+   会一起撑到屏幕外（名单区那几行直接看不见），所以显式纵向 flex + 名单区 flex:1。 */
+.today-screen {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+.today-scroll {
+  flex: 1;
+  height: 0;
 }
 
 .axis-row {
@@ -586,7 +614,9 @@
 
 /* 图例。原先在列表末尾、padding 底部留 40rpx 收尾；
    现在挪到顶部 header 里（不随列表滚动），所以只留左右和一点下边距。
-   4 项按 24rpx 字号排一行约 480rpx，750rpx 宽放得下，不需要换行。 */
+   5 项一行放不下（前四项约 516rpx，第五项「周末 / 法定节假日」自带 260rpx 左右），
+   flex-wrap 会把它折到第二行——两行是固定的，不会因为切页签改变高度，
+   所以下面 flex:1 的 swiper 区也不会跟着抖。 */
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -600,6 +630,19 @@
   gap: 8rpx;
   font-size: 28rpx;
   color: #6b6b70;
+}
+
+/* 「周末 / 法定节假日」的标记：对应月视图的空心格 .mc-rest。
+   描边色与 .mc-rest 取同一个值（同一个东西在两处必须同色），
+   但线宽加到 2rpx —— .mc-rest 的 1rpx 是 30 个格子挨在一起、靠密度才看得出的，
+   图例里只有一个孤零零的小方块，1rpx 在白底上几乎等于没有。
+   形状（方框）与上面四个实心圆点（.dot）刻意不同，避免被读成第五种状态。 */
+.lg-sq {
+  width: 18rpx;
+  height: 18rpx;
+  border: 2rpx solid #e3e1d8;
+  box-sizing: border-box;
+  border-radius: 3rpx;
 }
 
 .legend-text {
