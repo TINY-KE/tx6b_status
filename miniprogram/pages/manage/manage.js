@@ -39,6 +39,43 @@ function pad2(n) {
   return n < 10 ? '0' + n : '' + n;
 }
 
+// 考勤表按「当前跑在什么设备上」选出口，而不是按平台白名单。
+//
+// 事故：管理员在**鸿蒙 NEXT** 和 **电脑**上都点不动「转发到微信」，只弹一句
+// 「当前环境不支持转发」。根因是原来写的是
+//   `platform !== 'android' && platform !== 'ios'` → 拦掉
+// 这个白名单把两件不同的事混成了一件：
+//
+//   ① 鸿蒙手机本来**能**转发。鸿蒙的 platform 是 'ohos'（官方《小程序 HarmonyOS
+//      适配提醒》：`wx.getDeviceInfo().platform === 'ohos'`），而 wx.shareFileMessage
+//      官方文档标注「微信 鸿蒙 OS 版：支持」——是被白名单误杀的，不是接口不行。
+//   ② 电脑版微信**确实没有**转发面板，但它有 wx.saveFileToDisk
+//      （官方原话「保存文件系统的文件到用户磁盘，仅在 PC 端支持」，
+//      微信 Windows 版 / Mac 版均标注「支持」）。
+//      这里是该换一个能用的出口，而不是告诉管理员「你这台机器不行」。
+//
+// 所以判定退化成：只认出「一定不行」的开发者工具，PC 转走保存到磁盘，
+// 其余（含认不出来的新平台）一律直接调转发、让接口自己给答案。
+// 白名单只会在下一个新系统出现时继续把人挡在门外——鸿蒙这次就是。
+const PC_PLATFORMS = ['windows', 'mac', 'ohos_pc'];
+
+function detectExportEnv() {
+  let info = {};
+  try {
+    info = (wx.getDeviceInfo ? wx.getDeviceInfo() : wx.getSystemInfoSync()) || {};
+  } catch (e) {
+    info = {};
+  }
+  const platform = info.platform || '';
+  return {
+    platform: platform,
+    // 开发者工具：既没有转发面板，也没有用户磁盘。唯一「一定不行」的环境。
+    isDevtools: platform === 'devtools',
+    // 电脑版微信：Windows / Mac / 鸿蒙 PC。它没有转发面板，但有「保存到电脑」。
+    isPc: PC_PLATFORMS.indexOf(platform) >= 0,
+  };
+}
+
 Page({
   data: {
     tab: 'list',
@@ -79,6 +116,10 @@ Page({
     readyPath: '',
     readyName: '',
     readyText: '',
+    // 出口文案跟着设备走：电脑版微信没有转发面板，按钮就该叫「保存到电脑」，
+    // 否则管理员点一个注定弹不出面板的按钮，只会以为坏了。
+    shareBtnText: '转发到微信',
+    shareHintText: '',
 
     // 记录管理（管理员纠错）。员工端「只能填今天及以后 + 交叉拒绝 + 已结束不可改」
     // 那套规则必须配这个出口，否则漏填和填错都没有纠正途径。
@@ -138,9 +179,18 @@ Page({
     const month = today.slice(0, 7);
     const y = Number(today.slice(0, 4));
     const m = Number(today.slice(5, 7));
+    const env = detectExportEnv();
     this.setData({
       minMonth: y - 1 + '-' + pad2(m),
       maxMonth: month,
+      // 电脑版微信上是「保存到电脑」，其余（手机、开发者工具）是「转发到微信」。
+      shareBtnText: env.isPc ? '保存到电脑' : '转发到微信',
+      shareHintText: env.isPc
+        ? '先点「生成考勤表」，生成完再点「保存到电脑」，会弹出另存为窗口。' +
+          '同一月份重复导出会覆盖上一次的文件。'
+        : '先点「生成考勤表」，生成完再点「转发到微信」。' +
+          '转发面板只在手机微信里出现（开发者工具调不起来，请用手机「真机预览」）。' +
+          '同一月份重复导出会覆盖上一次的文件。',
     });
     this.applyMonth(month);
   },
@@ -306,21 +356,33 @@ Page({
       return;
     }
     const fileName = this.data.readyName;
-    // 开发者工具和 PC 版微信都不支持这个接口，提前认出来给句人话，
-    // 不然用户只会看到一句「转发未完成」。
-    const info = (wx.getDeviceInfo ? wx.getDeviceInfo() : wx.getSystemInfoSync()) || {};
-    const platform = info.platform || '';
-    if (platform !== 'android' && platform !== 'ios') {
+    const env = detectExportEnv();
+
+    // 开发者工具是唯一「一定不行、试也没意义」的环境：没有转发面板，也没有
+    // 用户磁盘。这里给的是可执行的指引（真机预览），不是一句「不支持」。
+    if (env.isDevtools) {
       wx.showModal({
-        title: '当前环境不支持转发',
+        title: '开发者工具不支持转发',
         content:
-          '微信转发面板只能在手机微信里调起（开发者工具、PC / Mac 版微信都不支持）。' +
-          '请用手机扫码「真机预览」后再点这个按钮。文件已生成好，在手机上重新点一次即可。',
+          '转发面板只能在手机微信里调起。请用手机扫码「真机预览」后再点这个按钮；' +
+          '文件已生成好，在手机上重新点一次即可。',
         showCancel: false,
         confirmText: '知道了',
       });
       return;
     }
+
+    // 电脑版微信（Windows / Mac / 鸿蒙 PC）：没有转发面板，但有「保存到电脑」。
+    // 换成那个能用的出口。必须在调 shareFileMessage **之前**返回，
+    // 否则会先调一次注定失败的接口。
+    if (env.isPc) {
+      this.saveExportToDisk(filePath);
+      return;
+    }
+
+    // 手机端（Android / iOS / 鸿蒙 ohos）以及认不出来的平台：直接调，
+    // 让接口自己给答案。这里刻意不再判 platform——2026 年加个白名单已经
+    // 把鸿蒙挡在门外一次了，下一个新系统还会再挡一次。
     wx.shareFileMessage({
       filePath,
       fileName,
@@ -333,9 +395,54 @@ Page({
         if (/cancel/i.test(msg)) return;
         console.error('转发考勤表失败', err);
         // 以前这里只弹一句「转发未完成」，把真实原因吞了。
-        // 现在把原始 errMsg 原样给出来——那句话是唯一能定位的线索。
+        // 现在把原始 errMsg 原样给出来，并带上平台——管理员截一张图，
+        // 就能定位到「是哪个环境、报了什么」，不用来回问。
         wx.showModal({
           title: '转发失败',
+          content:
+            '原因：' + (msg || '未知') +
+            '\n环境：' + (env.platform || '未知') +
+            '\n\n可截图发给开发者定位。',
+          showCancel: false,
+          confirmText: '知道了',
+        });
+      },
+    });
+  },
+
+  // 电脑版微信的出口。
+  //
+  // ⚠️ wx.saveFileToDisk **不支持 Promise 风格**（官方文档明确标注），
+  // 只能用 callback；所以这里既不 await 也不包 Promise。好在它不需要
+  // 用户点击手势，放在哪一层调都可以。
+  //
+  // 也没必要传 fileName——它按 filePath 的文件名另存，而这个路径
+  // 已经是 `考勤表-YYYY-MM.xlsx`（带后缀，见 saveLocal）。
+  saveExportToDisk(filePath) {
+    if (typeof wx.saveFileToDisk !== 'function') {
+      // 既没有转发面板、又没有磁盘出口：可能是很老的 PC 客户端
+      // 或某个我们没见过的新平台。给一句能照做的指引。
+      wx.showModal({
+        title: '当前环境无法导出',
+        content:
+          '这台设备既调不起转发面板，也没有「保存到电脑」接口。' +
+          '请在手机微信里打开小程序，重新生成并转发这一次。',
+        showCancel: false,
+        confirmText: '知道了',
+      });
+      return;
+    }
+    wx.saveFileToDisk({
+      filePath,
+      success: () => {
+        wx.showToast({ title: '已保存到电脑', icon: 'success' });
+      },
+      fail: (err) => {
+        const msg = (err && err.errMsg) || '';
+        if (/cancel/i.test(msg)) return;
+        console.error('保存考勤表到电脑失败', err);
+        wx.showModal({
+          title: '保存失败',
           content: '原因：' + (msg || '未知') + '\n\n可截图发给开发者定位。',
           showCancel: false,
           confirmText: '知道了',

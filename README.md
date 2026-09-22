@@ -57,7 +57,9 @@
   员工只能填今天及以后、已结束的自己改不了，漏填和填错就只剩这一个出口。
   代填可以选过去日期，并有一个「强制覆盖同时段已有记录」开关（默认关闭）。
   管理员的每次改动都写进 `presence_logs`。
-- **考勤表导出**（管理员，管理页第三个页签）：选月份 → 点「生成考勤表」→ 再点「转发到微信」。
+- **考勤表导出**（管理员，管理页第三个页签）：选月份 → 点「生成考勤表」→ 再点出口按钮。
+  出口**按设备选**（见下文「出口按能力选」）：手机微信是「转发到微信」，
+  电脑版微信是「保存到电脑」。
   **刻意分成两次点击**（原因见下文「转发为什么必须单独一次点击」），不是偷懒少写一步。
   列：序号 · 工号 · 姓名 · 出勤 · 年休假 · 探亲假 · 婚假 · 产假 · 丧假 · 事假 · 病假 · 小计。
   口径见下文「导出考勤表的口径」。
@@ -498,9 +500,11 @@ const isFirst = claimedCount.total === 0 && adminCount.total === 0;
 - **小计 = 出勤 + 各类假 = 该月工作日的天数**——这是恒等式，两边对不上就说明统计漏了数。
 - 排序：科室升序，科室内按工号升序。只统计到**今天**，当月的未来工作日不进表。
 
-**为什么出口只有「转发到微信」**：小程序没有通用的「保存到本地」接口
-（`wx.saveFileToDisk` 只在 Windows / Mac 版微信可用），CSV 在手机上又打不开，
-所以只能「真 .xlsx + `wx.shareFileMessage`」。文件放在云存储 `attendance/` 下、按月份命名，
+**两个出口**：手机微信里是「**转发到微信**」（`wx.shareFileMessage`），
+电脑版微信里是「**保存到电脑**」（`wx.saveFileToDisk`）。用哪个由 `detectExportEnv()`
+按设备决定，按钮文案也一起变（`shareBtnText`）——**不该让管理员去点一个注定弹不出
+面板的按钮**。CSV 那条路走不通（手机打不开），所以只能是真 .xlsx。
+文件放在云存储 `attendance/` 下、按月份命名，
 **同一月份重复导出会覆盖上一次的文件**，不会越积越多。
 
 #### 转发为什么必须单独一次点击
@@ -526,9 +530,38 @@ const isFirst = claimedCount.total === 0 && adminCount.total === 0;
 `wx.env.USER_DATA_PATH/考勤表-YYYY-MM.xlsx`（带后缀、同名覆盖、顺手清掉上一张），
 转发用的是这个路径。`shareExport` 里因此看不到 `tempFilePath`。
 
-非手机端（开发者工具、PC / Mac 版微信）这个接口会直接报 `not supported`，
-所以先用 `wx.getDeviceInfo().platform` 判一下，不是 `android` / `ios` 就给一句
-「请用手机扫码真机预览」，而不是让用户对着「转发未完成」猜。
+#### 出口按「能力」选，不按平台白名单（鸿蒙被误杀过一次）
+
+原先这里写的是 `platform !== 'android' && platform !== 'ios'` → 直接拦掉，
+弹一句「当前环境不支持转发」。2026-09 管理员反馈：
+**鸿蒙 NEXT 和电脑上点这个按钮都只弹那句话**。这个白名单把两件不同的事混成了一件：
+
+- **鸿蒙手机本来能转发。** 鸿蒙的 `platform` 是 `'ohos'`
+  （官方《小程序 HarmonyOS 适配提醒》：`wx.getDeviceInfo().platform === 'ohos'`），
+  而 `wx.shareFileMessage` 官方文档明确标注「**微信 鸿蒙 OS 版：支持**」。
+  是白名单把它误杀了，不是接口不行。
+- **电脑版微信确实没有转发面板**，但它有 `wx.saveFileToDisk`
+  （官方原话「保存文件系统的文件到用户磁盘，**仅在 PC 端支持**」，
+  微信 Windows 版 / Mac 版均标注「支持」）。这里该**换一个能用的出口**，
+  而不是告诉管理员「你这台机器不行」。
+
+改完的判定只有三档，见 `manage.js` 的 `detectExportEnv()`：
+
+| 环境 | `platform` | 出口 |
+|---|---|---|
+| 开发者工具 | `devtools` | 提前拦掉，提示用手机「真机预览」（它既没有转发面板，也没有用户磁盘） |
+| 电脑版微信 | `windows` / `mac` / `ohos_pc` | `wx.saveFileToDisk` → 另存为窗口 |
+| 其余（含鸿蒙 `ohos`、认不出的新平台） | — | 直接调 `wx.shareFileMessage`，**让接口自己回答** |
+
+**为什么不再用白名单**：白名单只会在下一个新系统出现时继续把人挡在门外——鸿蒙这次就是。
+而且判错的代价是不对称的：多试一次最多报个错，漏判一次就是「功能在用户的机器上不见了」。
+
+两个实现细节：
+
+- `wx.saveFileToDisk` **不支持 Promise 风格**（官方文档明确标注），只能 callback，
+  所以 `saveExportToDisk()` 里不许出现 `await` 或 `new Promise`（有断言守着）。
+- 转发失败弹窗里**连 `platform` 一起显示**（「环境：ohos」）。管理员截一张图，
+  「哪个环境 + 报了什么」两个字段就齐了，不用来回问。
 
 **⚠️ 生成 xlsx 是手写的，零第三方依赖。** 原先用 exceljs，但云函数默认超时只有 3 秒，
 而 exceljs 光冷启动 `require` 就要几百毫秒到 1 秒以上，加上生成与上传必然超时
@@ -566,8 +599,10 @@ const isFirst = claimedCount.total === 0 && adminCount.total === 0;
 
 | 提示 | 含义 | 怎么办 |
 |---|---|---|
-| 「当前环境不支持转发」 | `platform` 不是 `android` / `ios` | 用手机扫码「真机预览」后再点。文件已经生成好了，手机上重新点一次即可 |
-| 「转发失败 / 原因：xxx」 | `shareFileMessage` 真的 fail 了，xxx 是**原始 errMsg** | 直接看 xxx：含 `TAP gesture` → 转发没落在点击手势里（回头查 `shareExport` 是否被加了 await）；含 `not supported` → 平台不支持；含 `file not exist` → 落地文件被清了，重新生成一次 |
+| 「开发者工具不支持转发」 | `platform === 'devtools'` | 用手机扫码「真机预览」后再点。文件已经生成好了，手机上重新点一次即可 |
+| 「当前环境无法导出」 | 既没有转发面板，`wx.saveFileToDisk` 也不存在 | 很老的 PC 客户端或没见过的新平台。改用手机微信重做一次 |
+| 「转发失败 / 原因：xxx / 环境：yyy」 | `shareFileMessage` 真的 fail 了，xxx 是**原始 errMsg**，yyy 是当前 `platform` | 直接看 xxx：含 `TAP gesture` → 转发没落在点击手势里（回头查 `shareExport` 是否被加了 await）；含 `not supported` → 该环境确实没有转发面板，按 yyy 判断是不是漏进了没处理的平台；含 `file not exist` → 落地文件被清了，重新生成一次 |
+| 「保存失败 / 原因：xxx」 | 电脑版的 `saveFileToDisk` fail 了 | 看 xxx：含 `cancel` 是用户自己取消了（**不弹提示**）；含 `permission` 之类看是不是系统拦截了另存为窗口 |
 | 用户自己点取消 | `errMsg` 含 `cancel` | **不弹任何提示**，这是正常操作 |
 
 **为什么能这么分**：`exportAttendance` 套了 `try/catch`，把函数内部异常转成

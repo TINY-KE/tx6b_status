@@ -136,8 +136,11 @@
            中间隔了「调云函数 + 下载」两段异步会丢手势，真机上直接 fail。
            详见 manage.js 的 doExport / shareExport 注释。 -->
       <view class="ready-text" wx:if="{{readyPath}}">{{readyText}}</view>
-      <view class="btn-primary share-btn" wx:if="{{readyPath}}" bindtap="shareExport">转发到微信</view>
-      <view class="hint-text">先点「生成考勤表」，生成完再点「转发到微信」。转发面板只在手机微信里出现（开发者工具与电脑版微信不支持），同一月份重复导出会覆盖上一次的文件。</view>
+      <!-- 按钮文案随设备变：手机上是「转发到微信」，电脑版微信上是「保存到电脑」
+           （电脑版没有转发面板，但有 wx.saveFileToDisk）。见 manage.js 的
+           detectExportEnv / shareExport / saveExportToDisk。 -->
+      <view class="btn-primary share-btn" wx:if="{{readyPath}}" bindtap="shareExport">{{shareBtnText}}</view>
+      <view class="hint-text">{{shareHintText}}</view>
     </view>
 
   </block>
