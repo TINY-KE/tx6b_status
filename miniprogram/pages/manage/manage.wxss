@@ -5,7 +5,11 @@
 
 .tabs {
   display: flex;
-  gap: 40rpx;
+  /* 4 个页签（名册（N）/批量导入/考勤导出/记录管理）在当前字号下约 630rpx，
+     可用宽度约 654rpx——刚好够，但「名册（123）」这种三位数会擦边，
+     所以留 wrap 兜底：宁可换行，也不要横向溢出把最后一个页签挤没。 */
+  flex-wrap: wrap;
+  gap: 28rpx;
   background: #ffffff;
   border-radius: 20rpx;
   padding: 24rpx 24rpx 0;
@@ -13,7 +17,7 @@
 }
 
 .tab {
-  font-size: 36rpx;
+  font-size: 32rpx;
   color: #9a9aa0;
   padding-bottom: 20rpx;
   border-bottom: 4rpx solid transparent;
@@ -296,4 +300,238 @@
    #2f8f5b 是「在岗」的状态色，按钮借用它会让状态配色多出一个含义。 */
 .share-btn {
   margin: 0 0 24rpx;
+}
+
+/* ---------- 记录管理（管理员纠错） ---------- */
+
+/* 人员选择：一行一个，选中态用左侧色条 + 浅蓝底。
+   与上面的科室 chip 刻意不同形——chip 是「筛选条件」，这里是「选中对象」。 */
+.rec-pick {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 16rpx;
+  border-top: 1rpx solid rgba(0, 0, 0, 0.05);
+  border-left: 6rpx solid transparent;
+}
+
+.rec-pick.on {
+  background: #f2f7fc;
+  border-left-color: #185fa5;
+}
+
+.rp-name {
+  font-size: 32rpx;
+  color: #1f1f24;
+}
+
+.rp-dept {
+  font-size: 28rpx;
+  color: #9a9aa0;
+}
+
+.rp-jobno {
+  font-size: 26rpx;
+  color: #b0b0b6;
+  margin-left: auto;
+}
+
+.rec-item {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 0;
+  border-top: 1rpx solid rgba(0, 0, 0, 0.05);
+}
+
+.ri-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ri-line {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.ri-tag {
+  font-size: 28rpx;
+  color: #1f1f24;
+}
+
+.ri-state {
+  font-size: 24rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+}
+
+/* 三态配色只用于管理端列表，不参与看板那套「5 组配色同值」的约束：
+   未开始用中性灰、进行中用品牌蓝、已结束最淡。 */
+.rs-future {
+  color: #6b6b70;
+  background: #f2f2f4;
+}
+
+.rs-active {
+  color: #185fa5;
+  background: #e8f1fa;
+}
+
+.rs-ended {
+  color: #b0b0b6;
+  background: #f7f7f8;
+}
+
+.ri-date {
+  display: block;
+  font-size: 28rpx;
+  color: #9a9aa0;
+  margin-top: 6rpx;
+}
+
+.ri-note {
+  display: block;
+  font-size: 28rpx;
+  color: #6b6b70;
+  margin-top: 4rpx;
+}
+
+.ri-ops {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12rpx;
+  padding-left: 24rpx;
+  flex-shrink: 0;
+}
+
+.ri-act {
+  font-size: 28rpx;
+  color: #185fa5;
+}
+
+.ri-del {
+  font-size: 28rpx;
+  color: #e34d59;
+}
+
+.rec-add-btn {
+  margin-top: 24rpx;
+}
+
+.rec-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.rec-type {
+  font-size: 28rpx;
+  color: #6b6b70;
+  background: #f4f4f6;
+  padding: 10rpx 24rpx;
+  border-radius: 10rpx;
+}
+
+.rec-type.on {
+  color: #ffffff;
+  background: #185fa5;
+}
+
+.rec-range {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 20rpx;
+}
+
+/* 日期 / 时刻格子给死高度 + line-height：
+   不给死的话，中文日期（9/25 周五）和时刻（08:30）会撑出不同高度。 */
+.pick-cell {
+  font-size: 28rpx;
+  color: #1f1f24;
+  background: #f4f4f6;
+  border-radius: 10rpx;
+  padding: 0 18rpx;
+  height: 68rpx;
+  line-height: 68rpx;
+}
+
+.rec-sep {
+  font-size: 28rpx;
+  color: #9a9aa0;
+}
+
+.rec-note-title {
+  font-size: 30rpx;
+  color: #6b6b70;
+  margin: 24rpx 0 12rpx;
+}
+
+.rec-note-input {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rec-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.rec-reason {
+  font-size: 28rpx;
+  color: #6b6b70;
+  background: #f4f4f6;
+  padding: 10rpx 24rpx;
+  border-radius: 10rpx;
+}
+
+.rec-reason.on {
+  color: #ffffff;
+  background: #185fa5;
+}
+
+/* 强制覆盖的开关。刻意不用 <switch>：这一项会改动员工已有的历史记录，
+   做成「需要明确点一下的整行」更合适，也不会在滚动时被误滑到。 */
+.rec-force {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24rpx;
+  padding: 20rpx 0;
+  border-top: 1rpx solid rgba(0, 0, 0, 0.05);
+}
+
+.rf-label {
+  font-size: 30rpx;
+  color: #1f1f24;
+}
+
+.rf-state {
+  font-size: 28rpx;
+  color: #9a9aa0;
+  background: #f4f4f6;
+  padding: 6rpx 20rpx;
+  border-radius: 8rpx;
+}
+
+/* 开启态用红色：这是一条会覆盖别人记录的危险路径，视觉上要和普通按钮分开 */
+.rf-state.on {
+  color: #ffffff;
+  background: #e34d59;
+}
+
+/* 「取消」用中性描边，不用 .danger-btn——它不产生破坏性后果 */
+.rec-cancel {
+  margin-top: 20rpx;
+  text-align: center;
+  font-size: 32rpx;
+  color: #6b6b70;
+  line-height: 76rpx;
+  border: 1rpx solid #d9d9de;
+  border-radius: 12rpx;
 }

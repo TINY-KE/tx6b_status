@@ -22,13 +22,36 @@ const LEAVE_REASONS = ['事假', '病假', '年休假', '探亲假', '婚假', '
 // 单条记录的起止跨度上限（按日期差算）。出差最长按 30 天计。
 const SPAN_LIMIT_DAYS = 30;
 
+// 状态中文名，用于「与 xx 的『京内出差』有交叉」这类提示。
+// 必须与 miniprogram/utils/status.js 的 TYPES.label 一致。
+const TYPE_TEXT = { office: '在岗', meeting: '京内出差', trip: '京外出差', leave: '请假' };
+
+// 已经开始、还没结束的记录，只有「距开始不到 5 小时」才允许整条删除。
+// 区别在于：删除会把**已经发生的那部分也一起抹掉**，终止只保留已发生的部分、
+// 把结束时间收回来。给刚填错的人留一个 5 小时的纠正窗口，之后就必须走「提前终止」。
+const DELETE_WINDOW_HOURS = 5;
+const HOUR_MS = 60 * 60 * 1000;
+
+// 终止记录时把结束时间对齐到「当前所在半天的开始点」：
+//   08:30–12:00 之间 → 回到今天 08:30（今天上午这半天不算）
+//   12:00–18:00 之间 → 回到今天 12:00（今天下午这半天不算）
+//   早于 08:30       → 今天 08:30（同第一行）
+//   晚于 18:00       → 今天 18:00（当天已经过完，终止不影响当天）
+// 对齐到半天边界而不是「此刻」，是为了和考勤的半天粒度（上午 08:30-12:00 /
+// 下午 12:00-18:00 各 0.5 天）保持一致，不会留下 09:17 这种不规则边界。
+const HALF_START_MORNING = '08:30';
+const HALF_START_AFTERNOON = '12:00';
+const DAY_END_TEXT = '18:00';
+
 // 云数据库单次 get 上限 100 条，超出会静默截断，必须分页循环取。
 const PAGE_SIZE = 100;
 const PAGE_GUARD = 30; // 最多翻 30 页（3000 条），防御性上限
 
 // ===== 集合自动初始化 =====
 // 云开发不会为云函数自动建集合，漏建会报 "database collection not exists"。
-const REQUIRED_COLLECTIONS = ['staff', 'presence'];
+// presence_logs 存的是「谁在什么时候删/改/终止了哪条记录」，
+// 是防篡改规则的最后一道兜底——它能自动建起来这件事很重要，别手删。
+const REQUIRED_COLLECTIONS = ['staff', 'presence', 'presence_logs'];
 let collectionsReady = null;
 
 function ensureCollections() {
@@ -119,6 +142,66 @@ function toDateText(d) {
 function toShortDate(d) {
   const p = beijingParts(d);
   return p.month + '/' + p.day;
+}
+
+// 北京时间的「今天」日期字符串（YYYY-MM-DD）。
+// 云函数跑在 UTC，这里不能直接拿 getDate()——北京时间 0:00~8:00 那一段，
+// UTC 还停在前一天，「开始日期不能早于今天」的校验会错放行 8 小时。
+function todayText(now) {
+  return toDateText(now || new Date());
+}
+
+// 记录相对「此刻」的状态：
+//   future 还没开始 —— 可自由删除
+//   active 进行中   —— 可终止；删除另有 5 小时窗口
+//   ended  已结束   —— 只读，界面置灰
+function recordState(rec, nowTs) {
+  const s = new Date(rec.startAt).getTime();
+  const e = new Date(rec.endAt).getTime();
+  if (nowTs < s) return 'future';
+  if (nowTs < e) return 'active';
+  return 'ended';
+}
+
+// 删除受阻的原因，空串表示可删。
+// 前端据此把按钮置灰并说明原因——只回一个 true/false 的话，
+// 用户点了没反应会以为是卡住了。
+function deleteBlockReason(rec, nowTs) {
+  const state = recordState(rec, nowTs);
+  if (state === 'ended') return 'ended';
+  if (state === 'future') return '';
+  // 进行中：只看「距开始是否不到 5 小时」，与是哪一天无关
+  return nowTs - new Date(rec.startAt).getTime() < DELETE_WINDOW_HOURS * HOUR_MS
+    ? ''
+    : 'window';
+}
+
+// 「当前所在半天的开始点」的时间戳，终止记录时作为新的结束时间。
+function halfStartOfNow(now) {
+  const d = now || new Date();
+  const today = toDateText(d);
+  const p = beijingParts(d);
+  const minutes = p.hour * 60 + p.minute;
+  if (minutes >= DAY_END_MINUTES) return beijingTime(today, DAY_END_TEXT).getTime();
+  if (minutes >= 12 * 60) return beijingTime(today, HALF_START_AFTERNOON).getTime();
+  return beijingTime(today, HALF_START_MORNING).getTime();
+}
+
+// 两个时间区间是否相交。**相邻不算相交**：上午 08:30-12:00 与下午 12:00-18:00
+// 必须能无缝拼上，这是半天粒度的前提，所以两边都用严格不等号。
+// 抽成独立函数是为了能单测——这段判定错了会直接放行「覆盖别人的请假」。
+function overlaps(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && aEnd > bStart;
+}
+
+// 一条记录的时间描述，用在交叉提示里：'9/22 08:30-12:00'（跨天两端都带日期）。
+function recordRangeText(rec) {
+  const s = new Date(rec.startAt);
+  const e = new Date(rec.endAt);
+  if (toDateText(s) === toDateText(e)) {
+    return toShortDate(s) + ' ' + toMinuteText(s) + '-' + toMinuteText(e);
+  }
+  return toShortDate(s) + ' ' + toMinuteText(s) + ' 至 ' + toShortDate(e) + ' ' + toMinuteText(e);
 }
 
 // 分页拉全量，避免 100 条上限静默截断
@@ -235,8 +318,16 @@ exports.main = async (event) => {
       return saveRecords(event, OPENID);
     case 'remove':
       return removeRecord(event, OPENID);
+    case 'stop':
+      return stopRecord(event, OPENID);
     case 'mine':
       return myRecords(OPENID);
+    case 'adminRecords':
+      return adminRecords(event, OPENID);
+    case 'adminSave':
+      return adminSave(event, OPENID);
+    case 'adminRemove':
+      return adminRemove(event, OPENID);
     case 'export':
       return exportAttendance(event, OPENID);
     default:
@@ -605,8 +696,19 @@ async function rangeBoard(event) {
 // 两种形态：
 //   同日 —— startDate === endDate，配合 startTime/endTime（如 10:30-12:00 在办公室）
 //   跨天 —— startDate !== endDate，出差/请假按整天记（8:30-18:00）
-// 同一天内与该时段重叠的旧记录会被裁剪或删除。
-async function saveRecords(event, openid) {
+//
+// ⚠️ 与已有记录相交时**直接拒绝**，不再静默裁剪/覆盖。
+// 以前是「把旧记录删掉 / 截断 / 切成两段」，等于员工只要重填一条就能抹掉
+// 自己已经填过的请假——导出的考勤表因此不可信。现在改成明确报错并指出是与哪一条冲突。
+//
+// opts（只有管理员代填/代改时才传，普通员工路径不传）：
+//   allowPast   —— 豁免「开始日期不能早于今天」
+//   force       —— 相交时强制覆盖（删/裁剪旧记录），而不是拒绝
+//   ownerOpenid —— 记录归属人（管理员代员工填，记录挂在员工名下）
+//   actorOpenid —— 操作人（写日志用；普通员工即本人）
+async function saveRecords(event, openid, opts) {
+  const opt = opts || {};
+  const owner = opt.ownerOpenid || openid;
   const { type, startTime, endTime, note } = event;
   const startDate = event.startDate || event.date;
   const endDate = event.endDate || event.date || startDate;
@@ -615,6 +717,15 @@ async function saveRecords(event, openid) {
   if (VALID_TYPES.indexOf(type) < 0) return { success: false, message: '请选择去向状态' };
   if (!startTime || !endTime) return { success: false, message: '请选择时间段' };
   if (endDate < startDate) return { success: false, message: '结束日期不能早于开始日期' };
+
+  // 只能从今天开始填，不允许补填昨天及更早。
+  // 前端 picker 的 dateMin 只拦得住界面——旧版本客户端、或直接调接口都能绕过，
+  // 所以服务端必须再卡一次（管理员代填走 allowPast 豁免，否则漏记就真的无解）。
+  // ⚠️ 比较基准要用北京时间的今天（todayText），云函数本地是 UTC，
+  // 北京时间 0:00~8:00 那段直接取日期会拿到昨天。
+  if (!opt.allowPast && startDate < todayText()) {
+    return { success: false, message: '开始日期不能早于今天；补填历史记录请联系管理员' };
+  }
 
   // 备注必填：出差填「出差地」、请假选「请假事由」。
   // 前端已拦过一次，这里再拦是为了防止旧版本客户端或直接调接口漏过去。
@@ -644,26 +755,85 @@ async function saveRecords(event, openid) {
   if (!(newEnd > newStart)) return { success: false, message: '结束时间需晚于开始时间' };
 
   // 必须已认领身份，否则记录无法归属到人
-  const staffRes = await db.collection('staff').where({ openid }).limit(1).get();
+  const staffRes = await db.collection('staff').where({ openid: owner }).limit(1).get();
   if (staffRes.data.length === 0) {
-    return { success: false, message: '请先在「我的」里认领身份' };
+    return {
+      success: false,
+      message: opt.ownerOpenid ? '该员工还没有认领身份' : '请先在「我的」里认领身份',
+    };
   }
   const me = staffRes.data[0];
 
-  // 取出与「新记录所在区间」相交的我的所有记录，逐条处理重叠
+  // 取出与「新记录所在区间」相交的该员工所有记录
   const existRes = await db.collection('presence')
     .where({
-      _openid: openid,
+      _openid: owner,
       startAt: _.lt(dayEnd(endDate)),
       endAt: _.gt(dayStart(startDate)),
     })
     .limit(PAGE_SIZE)
     .get();
 
-  for (const old of existRes.data) {
+  // 逐条判相交。相交判定走 overlaps()：相邻不算相交，
+  // 上午 08:30-12:00 与下午 12:00-18:00 要能无缝拼上，这是半天粒度的前提。
+  const conflicts = existRes.data.filter((old) =>
+    overlaps(new Date(old.startAt).getTime(), new Date(old.endAt).getTime(), newStart, newEnd)
+  );
+
+  if (conflicts.length > 0 && !opt.force) {
+    // 取开始最早的那条来提示，并带上时间与类型——只说「有交叉」用户不知道该去改哪条
+    const c = conflicts
+      .slice()
+      .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
+    return {
+      success: false,
+      message:
+        '与 ' + recordRangeText(c) + ' 的「' + (TYPE_TEXT[c.type] || c.type) + '」有交叉，' +
+        '请先删除或提前终止那条记录',
+    };
+  }
+  if (conflicts.length > 0) {
+    await resolveOverlaps(conflicts, newStart, newEnd, owner);
+  }
+
+  await db.collection('presence').add({
+    data: {
+      _openid: owner,
+      name: me.name || '',
+      dept: me.dept || '',
+      type,
+      startAt: new Date(newStart),
+      endAt: new Date(newEnd),
+      note: noteText.slice(0, 50),
+      createdAt: db.serverDate(),
+      updatedAt: db.serverDate(),
+    },
+  });
+
+  // 管理员的强制覆盖会改动别人的既有记录，必须留痕——
+  // 这是整套规则里唯一能绕过「交叉即拒绝」的路径。
+  if (conflicts.length > 0 && opt.force) {
+    await writeLog({
+      actor: opt.actorOpenid || openid,
+      action: 'adminOverwrite',
+      targetOpenid: owner,
+      byAdmin: true,
+      before: { conflicts: conflicts.map(shapeForLog) },
+      after: { type, startAt: new Date(newStart), endAt: new Date(newEnd), note: noteText },
+    });
+  }
+
+  // 顺带回传最新的记录列表，前端直接用，省掉一次云函数调用
+  return { success: true, list: await fetchMyRecords(owner) };
+}
+
+// 把与新记录相交的旧记录删掉或裁剪掉。**只有管理员「强制覆盖」才会走到这里。**
+// 普通员工路径在 saveRecords 里已经直接拒绝了，这段逻辑之所以留着，
+// 是为了给管理员一个「确认要改」的出口——否则员工漏记、填错就彻底没法纠正。
+async function resolveOverlaps(conflicts, newStart, newEnd, owner) {
+  for (const old of conflicts) {
     const os = new Date(old.startAt).getTime();
     const oe = new Date(old.endAt).getTime();
-    if (os >= newEnd || oe <= newStart) continue; // 不相交
 
     if (os >= newStart && oe <= newEnd) {
       // 完全被新记录覆盖 → 删除
@@ -675,7 +845,7 @@ async function saveRecords(event, openid) {
       });
       await db.collection('presence').add({
         data: {
-          _openid: openid,
+          _openid: owner,
           name: old.name,
           dept: old.dept,
           type: old.type,
@@ -698,52 +868,258 @@ async function saveRecords(event, openid) {
       });
     }
   }
-
-  await db.collection('presence').add({
-    data: {
-      _openid: openid,
-      name: me.name || '',
-      dept: me.dept || '',
-      type,
-      startAt: new Date(newStart),
-      endAt: new Date(newEnd),
-      note: noteText.slice(0, 50),
-      createdAt: db.serverDate(),
-      updatedAt: db.serverDate(),
-    },
-  });
-
-  // 顺带回传最新的「我的记录」，前端直接用，省掉一次云函数调用
-  return { success: true, list: await fetchMyRecords(openid) };
 }
 
+// 取一条记录并校验归属，返回 { rec } 或 { err }
+async function loadOwnRecord(id, owner) {
+  let doc;
+  try {
+    doc = await db.collection('presence').doc(id).get();
+  } catch (e) {
+    return { err: '记录不存在' };
+  }
+  if (!doc.data) return { err: '记录不存在' };
+  if (doc.data._openid !== owner) return { err: '只能操作自己的记录' };
+  return { rec: doc.data };
+}
+
+// 写一条操作日志。
+// 删除、提前终止、管理员的修改/删除/代填都会写——这是「事后查得清是谁改的」
+// 唯一依据，也是这套防篡改规则的最后一道兜底。
+// 日志写入失败**不能**反过来把业务操作搞挂，所以整段 try 住，只打错误日志。
+async function writeLog(entry) {
+  try {
+    await db.collection('presence_logs').add({
+      data: {
+        _openid: entry.actor || '',
+        action: entry.action,
+        targetId: entry.targetId || '',
+        targetOpenid: entry.targetOpenid || '',
+        byAdmin: !!entry.byAdmin,
+        before: entry.before || null,
+        after: entry.after || null,
+        at: db.serverDate(),
+      },
+    });
+  } catch (e) {
+    console.error('写操作日志失败', entry && entry.action, e && e.message);
+  }
+}
+
+// 记录的可留痕摘要（日志里存这个，不存整个文档，避免把 _id 之类冗余信息带进去）
+function shapeForLog(rec) {
+  if (!rec) return null;
+  return {
+    type: rec.type || '',
+    note: rec.note || '',
+    startAt: rec.startAt ? new Date(rec.startAt).toISOString() : '',
+    endAt: rec.endAt ? new Date(rec.endAt).toISOString() : '',
+  };
+}
+
+// 删除一条记录。
+// 规则（与前端置灰口径一致，前端只是提示，这里才是权威）：
+//   还没开始 → 随便删
+//   进行中   → 只有「距开始不到 5 小时」能删（给刚填错的人一个纠正窗口）
+//   已结束   → 一律不能删
 async function removeRecord(event, openid) {
   const id = event.id;
   if (!id) return { success: false, message: '缺少记录 ID' };
+
+  const found = await loadOwnRecord(id, openid);
+  if (found.err) return { success: false, message: found.err };
+  const rec = found.rec;
+
+  const block = deleteBlockReason(rec, Date.now());
+  if (block === 'ended') {
+    return { success: false, message: '这条记录已经结束了，不能删除' };
+  }
+  if (block === 'window') {
+    return {
+      success: false,
+      message:
+        '已开始超过 ' + DELETE_WINDOW_HOURS +
+        ' 小时，不能删除；如需提前结束，请用「提前终止」',
+    };
+  }
+
+  await db.collection('presence').doc(id).remove();
+  await writeLog({
+    actor: openid,
+    action: 'remove',
+    targetId: id,
+    targetOpenid: openid,
+    before: shapeForLog(rec),
+  });
+  return { success: true, list: await fetchMyRecords(openid) };
+}
+
+// 提前终止：把结束时间收回到「当前所在半天的开始点」（见 halfStartOfNow）。
+// 例：今天 08:30-18:00 的假，上午 10 点终止 → 结束时间收到 08:30 → 今天上午这半天不请假。
+//
+// 若收回后的时间 <= 开始时间（也就是这半天本来就还没开始），
+// 整条记录都不存在「已经发生」的部分，直接删掉——留一条零长度的记录会让
+// 考勤统计出现「长度 0 的格子」，半天粒度那里会算出 0 天的怪结果。
+async function stopRecord(event, openid) {
+  const id = event.id;
+  if (!id) return { success: false, message: '缺少记录 ID' };
+
+  const found = await loadOwnRecord(id, openid);
+  if (found.err) return { success: false, message: found.err };
+  const rec = found.rec;
+
+  const now = Date.now();
+  const state = recordState(rec, now);
+  if (state === 'future') return { success: false, message: '这条还没开始，直接删除即可' };
+  if (state === 'ended') return { success: false, message: '这条记录已经结束了' };
+
+  const cut = halfStartOfNow(new Date(now));
+  const startTs = new Date(rec.startAt).getTime();
+  const before = shapeForLog(rec);
+
+  if (cut <= startTs) {
+    await db.collection('presence').doc(id).remove();
+    await writeLog({
+      actor: openid,
+      action: 'stop',
+      targetId: id,
+      targetOpenid: openid,
+      before,
+      after: null,
+    });
+    return { success: true, message: '已终止', list: await fetchMyRecords(openid) };
+  }
+
+  await db.collection('presence').doc(id).update({
+    data: { endAt: new Date(cut), updatedAt: db.serverDate() },
+  });
+  await writeLog({
+    actor: openid,
+    action: 'stop',
+    targetId: id,
+    targetOpenid: openid,
+    before,
+    after: Object.assign({}, before, { endAt: new Date(cut).toISOString() }),
+  });
+  return { success: true, message: '已终止', list: await fetchMyRecords(openid) };
+}
+
+// ===== 管理员：记录纠错 =====
+// 员工只能填今天及以后，且填错超过 5 小时就只能「终止」，漏记更没有自助途径——
+// 这些情况都必须由管理员纠正，所以这组接口是那套规则的必要配套，不是可有可无。
+// 所有改动记录的操作都写 presence_logs 留痕。
+
+// 把前端传来的 staffId 解析成 openid。
+// 刻意让前端传 staffId 而不是 openid：openid 没必要下发到端上，
+// 而名册的 _id 本来就是管理员在界面上选人时的依据。
+async function resolveTargetOpenid(event) {
+  const direct = String(event.targetOpenid || '');
+  if (direct) return direct;
+  const id = String(event.staffId || '');
+  if (!id) return '';
+  try {
+    const d = await db.collection('staff').doc(id).get();
+    return (d.data && d.data.openid) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+async function adminRecords(event, openid) {
+  if (!(await checkAdmin(openid))) return { success: false, message: '仅管理员可用' };
+  const target = await resolveTargetOpenid(event);
+  if (!target) return { success: false, message: '该人员还没有认领身份' };
+  return { success: true, list: await fetchMyRecords(target) };
+}
+
+async function adminRemove(event, openid) {
+  if (!(await checkAdmin(openid))) return { success: false, message: '仅管理员可用' };
+  const id = event.id;
+  if (!id) return { success: false, message: '缺少记录 ID' };
+
   let doc;
   try {
     doc = await db.collection('presence').doc(id).get();
   } catch (e) {
     return { success: false, message: '记录不存在' };
   }
-  if (!doc.data || doc.data._openid !== openid) {
-    return { success: false, message: '只能删除自己的记录' };
-  }
+  if (!doc.data) return { success: false, message: '记录不存在' };
+  const rec = doc.data;
+
   await db.collection('presence').doc(id).remove();
-  return { success: true, list: await fetchMyRecords(openid) };
+  await writeLog({
+    actor: openid,
+    action: 'adminRemove',
+    targetId: id,
+    targetOpenid: rec._openid || '',
+    byAdmin: true,
+    before: shapeForLog(rec),
+  });
+  return { success: true, list: await fetchMyRecords(rec._openid || '') };
+}
+
+// 管理员代填 / 代改：豁免「不能填过去」，并可用 force 覆盖交叉记录。
+// 「修改」的语义是「删掉旧的 + 新建一条」（传 replaceId），
+// 比在原记录上做字段级 diff 简单得多，也不会漏掉时间重叠的连带处理。
+async function adminSave(event, openid) {
+  if (!(await checkAdmin(openid))) return { success: false, message: '仅管理员可用' };
+  const target = await resolveTargetOpenid(event);
+  if (!target) return { success: false, message: '该人员还没有认领身份' };
+
+  let replaced = null;
+  const replaceId = String(event.replaceId || '');
+  if (replaceId) {
+    try {
+      const d = await db.collection('presence').doc(replaceId).get();
+      // 只允许替换属于该员工的记录，避免把 id 传错时误删别人的
+      if (d.data && d.data._openid === target) {
+        replaced = shapeForLog(d.data);
+        await db.collection('presence').doc(replaceId).remove();
+      }
+    } catch (e) {
+      // 记录已经不在了（别人删过）——继续往下新增即可
+    }
+  }
+
+  const res = await saveRecords(event, openid, {
+    allowPast: true,
+    force: !!event.force,
+    ownerOpenid: target,
+    actorOpenid: openid,
+  });
+
+  if (replaceId && replaced) {
+    await writeLog({
+      actor: openid,
+      action: 'adminUpdate',
+      targetId: replaceId,
+      targetOpenid: target,
+      byAdmin: true,
+      before: replaced,
+      after: res && res.success ? { type: event.type, note: event.note } : null,
+    });
+  }
+  return res;
 }
 
 // 我的近期记录，按时间倒序（含未来已填的）
 // 把「我的记录」整形为前端渲染结构。
-// save / remove / mine 三个入口共用，这样写操作可以顺带回传最新列表，
+// save / remove / stop / mine 各入口共用，这样写操作可以顺带回传最新列表，
 // 前端就不必再发一次云函数调用来刷新（一次冷启动能省 1~3 秒）。
+//
+// state / canDelete / canStop / deleteBlock **一律由服务端算好下发**：
+// 判定依赖「此刻」和 5 小时窗口，云函数跑 UTC、手机是本地时区，
+// 前端自己算就是第二份口径，迟早会在边界上不一致（比如刚过 5 小时那一下）。
 function shapeMyRecords(rows) {
+  const nowTs = Date.now();
   return rows.map((r) => {
     const s = new Date(r.startAt);
     const e = new Date(r.endAt);
     const startDate = toDateText(s);
     const endDate = toDateText(e);
     const sameDay = startDate === endDate;
+    const state = recordState(r, nowTs);
+    const block = deleteBlockReason(r, nowTs);
     return {
       _id: r._id,
       type: r.type,
@@ -756,6 +1132,18 @@ function shapeMyRecords(rows) {
       dateText: sameDay
         ? startDate
         : toShortDate(s) + ' ' + toMinuteText(s) + ' 至 ' + toShortDate(e) + ' ' + toMinuteText(e),
+      // 结构化起止。管理端「修改」要回填表单，不能去解析上面那句给人看的 dateText
+      // （跨天时它是「9/22 08:30 至 9/25 18:00」这种混合文本）。
+      startDate,
+      startTime: toMinuteText(s),
+      endDate,
+      endTime: toMinuteText(e),
+      // future（未开始）/ active（进行中）/ ended（已结束，界面置灰）
+      state,
+      canDelete: block === '',
+      canStop: state === 'active',
+      // '' / 'ended' / 'window' —— 前端据此说明「为什么不能删」
+      deleteBlock: block,
     };
   });
 }

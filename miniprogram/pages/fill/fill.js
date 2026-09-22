@@ -4,9 +4,18 @@ const noteUtil = require('../../utils/note');
 
 // 起止日期跨度上限。出差最长按 30 天算，超过就拦下来，防止手滑选错月份。
 const SPAN_LIMIT_DAYS = 30;
-// 可选日期范围：允许补填过去 7 天，提前填未来 30 天
-const PAST_DAYS = 7;
+// 可选日期范围：**只能从今天开始**，最多提前填 30 天。
+// 刻意不允许补填昨天及更早——补填等于事后补一条对自己有利的记录，
+// 导出的考勤表就不再可信（云函数 saveRecords 里有一道同样的校验兜底）。
+// 确实漏填的，由管理员在管理页「记录管理」里补。
 const FUTURE_DAYS = 30;
+
+// 删除受阻时的说明。文案在 JS 里算好——WXML 的 {{}} 里不能出现中文字符串字面量。
+// key 与云函数下发的 deleteBlock 一一对应（'' / 'ended' / 'window'）。
+const DELETE_BLOCK_TEXT = {
+  ended: '这条记录已经结束了，不能再删除',
+  window: '已开始超过 5 小时，不能删除；如需提前结束请用「提前终止」',
+};
 // 「连续 N 天」的天数范围，上限与跨度上限一致。
 // 两个下限不同，因为「1 天」在两行里的处境不一样：
 //   「今天起」最少 2 天 —— 1 天就是「今天整天」，上面已经有现成按钮，不必重复。
@@ -20,6 +29,19 @@ const STREAK_MAX = SPAN_LIMIT_DAYS;
 // 云函数那边运行在 UTC，写法完全不同，两处不要互相复制。
 function tsOf(dateStr, timeStr) {
   return new Date(dateStr + 'T' + timeStr + ':00').getTime();
+}
+
+// 「提前终止」的效果说明。终止点是当前所在半天的起点，所以效果随「现在」变：
+//   上午终止 → 今天上午恢复在岗；下午终止 → 今天下午恢复在岗；
+//   下班后终止 → 当天不受影响。
+// 这里只是给人看的提示文案，真正的判定在云函数（canStop / halfStartOfNow），
+// 两边职责不同，不要互相复制这段逻辑。
+function stopHintText() {
+  const now = new Date();
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  if (minutes >= 18 * 60) return '当天记录保持到 18:00';
+  if (minutes >= 12 * 60) return '今天下午将恢复为在岗';
+  return '今天上午将恢复为在岗';
 }
 
 // 原先这里还有 pad2 / minToText / bumpHour 三个辅助函数，专供「结束时刻早于开始时刻
@@ -107,7 +129,8 @@ Page({
       endDate: t,
       endDateText: dateUtil.dayLabel(t),
       endTime: '18:00',
-      dateMin: dateUtil.addDays(t, -PAST_DAYS),
+      // dateMin 固定为今天：pickdater 只允许从今天起选（见文件头的 FUTURE_DAYS 说明）
+      dateMin: t,
       dateMax: dateUtil.addDays(t, FUTURE_DAYS),
     });
     this.refreshSpan();
@@ -458,8 +481,11 @@ Page({
   },
 
   // 把服务端返回的记录列表转成渲染结构。
-  // 云函数的 save / remove 会顺带回传最新列表，直接用它即可，
+  // 云函数的 save / remove / stop 会顺带回传最新列表，直接用它即可，
   // 不必再发一次「查询我的记录」的请求——那一次往返在冷启动时能占到 1~3 秒。
+  //
+  // state / canDelete / canStop **全部沿用服务端的判定**，前端不自己算时间：
+  // 「进行中」和「5 小时删除窗口」都依赖此刻，前端再算一份就是第二个口径。
   applyMyList(rawList) {
     const list = (rawList || []).map((r) => ({
       _id: r._id,
@@ -469,6 +495,16 @@ Page({
       rangeText: r.rangeText,
       dateText: r.dateText,
       note: r.note,
+      // future（未开始）/ active（进行中）/ ended（已结束）
+      state: r.state || '',
+      // 已结束的整行置灰、不给任何操作
+      stateClass: r.state === 'ended' ? 'rec-ended' : '',
+      canStop: !!r.canStop,
+      canDelete: !!r.canDelete,
+      // 终止效果的说明（只影响确认弹窗的文案）
+      stopHint: r.canStop ? stopHintText() : '',
+      // 不能删时点「删除」要说明原因，否则用户以为点坏了
+      deleteHint: DELETE_BLOCK_TEXT[r.deleteBlock] || '',
     }));
     this.setData({ myList: list });
     // 记录变了，历史备注也跟着变（刚填过的会排到最前）
@@ -506,8 +542,23 @@ Page({
     }
   },
 
-  async removeRecord(e) {
-    const id = e.currentTarget.dataset.id;
+  // 点「删除」。能不能删由云函数判定（已结束 / 已开始超过 5 小时都不能删），
+  // 这里只负责把原因说清楚，不让用户白点一次。
+  tapDelete(e) {
+    const item = this.data.myList[Number(e.currentTarget.dataset.index)] || {};
+    if (!item.canDelete) {
+      wx.showModal({
+        title: '不能删除',
+        content: item.deleteHint || '这条记录不能删除',
+        showCancel: false,
+        confirmText: '知道了',
+      });
+      return;
+    }
+    this.doRemove(item._id);
+  },
+
+  async doRemove(id) {
     const res = await new Promise((resolve) => {
       wx.showModal({
         title: '删除记录',
@@ -526,17 +577,76 @@ Page({
         name: 'presence',
         data: { action: 'remove', id },
       });
+      wx.hideLoading();
       if (result && result.success) {
         wx.showToast({ title: '已删除', icon: 'success' });
         this.applyMyList(result.list);
-      } else {
-        wx.showToast({ title: (result && result.message) || '删除失败', icon: 'none' });
+        return;
       }
+      // 服务端的拒绝理由比前端更权威（可能刚好跨过 5 小时那条线）。
+      // 用弹窗而不是 toast：理由有好几个字，toast 会截断。
+      wx.showModal({
+        title: '删除失败',
+        content: (result && result.message) || '请稍后重试',
+        showCancel: false,
+        confirmText: '知道了',
+      });
     } catch (err) {
       console.error('删除记录失败', err);
-      wx.showToast({ title: '删除失败', icon: 'none' });
-    } finally {
       wx.hideLoading();
+      wx.showModal({
+        title: '删除失败',
+        content: (err && err.errMsg) || '请稍后重试',
+        showCancel: false,
+        confirmText: '知道了',
+      });
+    }
+  },
+
+  // 提前终止：云函数把结束时间收回到「当前所在半天的开始点」。
+  // 确认文案必须说清这个效果，否则用户会以为是「结束到此刻」。
+  async stopRecord(e) {
+    const item = this.data.myList[Number(e.currentTarget.dataset.index)] || {};
+    if (!item._id) return;
+
+    const res = await new Promise((resolve) => {
+      wx.showModal({
+        title: '提前终止',
+        content: '终止后' + (item.stopHint || '今天这半天将恢复为在岗') + '，确定吗？',
+        confirmText: '终止',
+        success: resolve,
+        fail: () => resolve({ confirm: false }),
+      });
+    });
+    if (!res.confirm) return;
+
+    wx.showLoading({ title: '终止中' });
+    try {
+      const { result } = await wx.cloud.callFunction({
+        name: 'presence',
+        data: { action: 'stop', id: item._id },
+      });
+      wx.hideLoading();
+      if (result && result.success) {
+        wx.showToast({ title: '已终止', icon: 'success' });
+        this.applyMyList(result.list);
+        return;
+      }
+      wx.showModal({
+        title: '终止失败',
+        content: (result && result.message) || '请稍后重试',
+        showCancel: false,
+        confirmText: '知道了',
+      });
+    } catch (err) {
+      console.error('终止记录失败', err);
+      wx.hideLoading();
+      wx.showModal({
+        title: '终止失败',
+        content: (err && err.errMsg) || '请稍后重试',
+        showCancel: false,
+        confirmText: '知道了',
+      });
     }
   },
 

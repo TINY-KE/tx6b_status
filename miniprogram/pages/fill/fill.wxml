@@ -170,7 +170,11 @@
 
   <view class="card" wx:if="{{myList.length}}">
     <view class="sec-title">我最近的记录</view>
-    <view class="rec-row" wx:for="{{myList}}" wx:key="_id">
+    <!-- 三种形态（state 与 canDelete / canStop 都由云函数算好下发，前端不自己判时间）：
+         未开始 → 只有「删除」
+         进行中 → 「提前终止」+「删除」（已开始超 5 小时则删除置灰，点了会说明原因）
+         已结束 → 整行置灰，不给任何操作 -->
+    <view class="rec-row {{item.stateClass}}" wx:for="{{myList}}" wx:key="_id">
       <view class="rec-main">
         <view class="rec-line">
           <text class="rec-tag {{item.typeClass}}">{{item.typeLabel}}</text>
@@ -179,8 +183,13 @@
         <text class="rec-date">{{item.dateText}}</text>
         <text class="rec-note" wx:if="{{item.note}}">{{item.note}}</text>
       </view>
-      <text class="rec-del" data-id="{{item._id}}" bindtap="removeRecord">删除</text>
+      <view class="rec-ops" wx:if="{{item.state !== 'ended'}}">
+        <text class="rec-stop" wx:if="{{item.canStop}}" data-index="{{index}}" bindtap="stopRecord">提前终止</text>
+        <text class="rec-del {{item.canDelete ? '' : 'rec-del-off'}}" data-index="{{index}}" bindtap="tapDelete">删除</text>
+      </view>
+      <view class="rec-ended-tag" wx:else>已结束</view>
     </view>
+    <view class="rec-hint">只能填今天及以后；已结束的记录不可修改，如需纠正请联系管理员。</view>
   </view>
 
   <!-- <view class="bottom-tip">保存后，「在位看板」会立即同步</view> -->

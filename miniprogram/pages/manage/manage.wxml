@@ -4,6 +4,7 @@
     <view class="tab {{tab === 'list' ? 'on' : ''}}" data-tab="list" bindtap="onTabChange">名册（{{list.length}}）</view>
     <view class="tab {{tab === 'import' ? 'on' : ''}}" data-tab="import" bindtap="onTabChange">批量导入</view>
     <view class="tab {{tab === 'export' ? 'on' : ''}}" data-tab="export" bindtap="onTabChange">考勤导出</view>
+    <view class="tab {{tab === 'records' ? 'on' : ''}}" data-tab="records" bindtap="onTabChange">记录管理</view>
   </view>
 
   <block wx:if="{{tab === 'list'}}">
@@ -137,6 +138,119 @@
       <view class="ready-text" wx:if="{{readyPath}}">{{readyText}}</view>
       <view class="btn-primary share-btn" wx:if="{{readyPath}}" bindtap="shareExport">转发到微信</view>
       <view class="hint-text">先点「生成考勤表」，生成完再点「转发到微信」。转发面板只在手机微信里出现（开发者工具与电脑版微信不支持），同一月份重复导出会覆盖上一次的文件。</view>
+    </view>
+
+  </block>
+
+  <block wx:elif="{{tab === 'records'}}">
+
+    <view class="card">
+      <view class="sec-title">选择人员</view>
+      <!-- 这里的存在意义：员工只能填今天及以后，且已开始超 5 小时／已结束的记录
+           自己都改不了。漏填、填错日期这些情况必须由管理员纠正，
+           否则那套规则会把员工逼到死路上。 -->
+      <view class="hint-text">员工只能填今天及以后，已结束的记录自己也改不了；漏填、填错都在这里纠正。每次改动都会留痕。</view>
+      <input class="search-input" placeholder="搜索姓名 / 工号" value="{{recKeyword}}" bindinput="onRecKeyword" />
+
+      <scroll-view class="dept-bar" scroll-x enable-flex show-scrollbar="{{false}}">
+        <view
+          class="dept-chip {{item.value === recDept ? 'on' : ''}}"
+          wx:for="{{deptTabs}}"
+          wx:key="value"
+          data-dept="{{item.value}}"
+          bindtap="onRecDept"
+        >{{item.label}}</view>
+      </scroll-view>
+
+      <view
+        class="rec-pick {{item._id === recTargetId ? 'on' : ''}}"
+        wx:for="{{recStaff}}"
+        wx:key="_id"
+        data-id="{{item._id}}"
+        data-name="{{item.name}}"
+        bindtap="pickRecStaff"
+      >
+        <text class="rp-name">{{item.name}}</text>
+        <text class="rp-dept">{{item.dept}}</text>
+        <text class="rp-jobno" wx:if="{{item.jobNo}}">{{item.jobNo}}</text>
+      </view>
+
+      <view class="empty" wx:if="{{recStaff.length === 0}}">没有已认领的人员（未认领的人不会有记录）</view>
+    </view>
+
+    <view class="card" wx:if="{{recTargetId}}">
+      <view class="sec-title">{{recTargetName}} 的记录</view>
+
+      <view class="rec-item" wx:for="{{recList}}" wx:key="_id">
+        <view class="ri-main">
+          <view class="ri-line">
+            <text class="ri-tag">{{item.typeLabel}}</text>
+            <text class="ri-state {{item.stateClass}}">{{item.stateText}}</text>
+          </view>
+          <text class="ri-date">{{item.dateText}}</text>
+          <text class="ri-note" wx:if="{{item.note}}">{{item.note}}</text>
+        </view>
+        <view class="ri-ops">
+          <text class="ri-act" data-index="{{index}}" bindtap="openRecForm">修改</text>
+          <text class="ri-del" data-index="{{index}}" bindtap="recDelete">删除</text>
+        </view>
+      </view>
+
+      <view class="empty" wx:if="{{recList.length === 0}}">这个人还没有记录</view>
+
+      <view class="btn-primary rec-add-btn" bindtap="openRecForm">代填一条记录</view>
+    </view>
+
+    <view class="card" wx:if="{{recFormOpen}}">
+      <view class="sec-title">{{recFormTitle}}</view>
+      <view class="hint-text" wx:if="{{recReplaceId}}">「修改」＝删掉原来那条、再新建一条，两步都会留痕。</view>
+
+      <view class="rec-types">
+        <view
+          class="rec-type {{item.value === recType ? 'on' : ''}}"
+          wx:for="{{recTypes}}"
+          wx:key="value"
+          data-value="{{item.value}}"
+          bindtap="onRecType"
+        >{{item.label}}</view>
+      </view>
+
+      <view class="rec-range">
+        <picker mode="date" value="{{recStartDate}}" start="{{recDateMin}}" end="{{recDateMax}}" bindchange="onRecStartDate">
+          <view class="pick-cell">{{recStartDateText}}</view>
+        </picker>
+        <picker mode="time" value="{{recStartTime}}" bindchange="onRecStartTime">
+          <view class="pick-cell">{{recStartTime}}</view>
+        </picker>
+        <text class="rec-sep">至</text>
+        <picker mode="date" value="{{recEndDate}}" start="{{recDateMin}}" end="{{recDateMax}}" bindchange="onRecEndDate">
+          <view class="pick-cell">{{recEndDateText}}</view>
+        </picker>
+        <picker mode="time" value="{{recEndTime}}" bindchange="onRecEndTime">
+          <view class="pick-cell">{{recEndTime}}</view>
+        </picker>
+      </view>
+
+      <view class="rec-note-title">{{recNoteTitle}}</view>
+      <view class="rec-reasons" wx:if="{{recType === 'leave'}}">
+        <view
+          class="rec-reason {{item.active}}"
+          wx:for="{{recLeaveReasons}}"
+          wx:key="text"
+          data-text="{{item.text}}"
+          bindtap="onRecReason"
+        >{{item.text}}</view>
+      </view>
+      <input class="add-input rec-note-input" wx:else placeholder="{{recNotePlaceholder}}" value="{{recNote}}" bindinput="onRecNote" maxlength="50" />
+
+      <view class="rec-force" bindtap="toggleRecForce">
+        <text class="rf-label">强制覆盖同时段已有记录</text>
+        <text class="rf-state {{recForce ? 'on' : ''}}">{{recForceText}}</text>
+      </view>
+      <view class="hint-text">不覆盖时，与员工已有记录有交叉会直接报错（和员工自己填一样）；覆盖会把冲突那条删掉或截断，并写入操作日志。</view>
+
+      <view class="btn-primary rec-add-btn {{recSubmitting ? 'btn-disabled' : ''}}" bindtap="submitRecForm">{{recSubmitText}}</view>
+      <view class="rec-cancel" bindtap="closeRecForm">取消</view>
     </view>
 
   </block>

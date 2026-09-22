@@ -2,6 +2,38 @@
 // 这里只负责把解析结果接进页面。
 const rosterUtil = require('../../utils/roster.js');
 const dateUtil = require('../../utils/date.js');
+const noteUtil = require('../../utils/note.js');
+const statusUtil = require('../../utils/status.js');
+
+// 管理员代填时可选的去向：比员工端多一个「在岗」——
+// 员工误报了请假（比如假条没批下来）时，得能把那些时段改回在岗。
+const REC_TYPE_VALUES = ['office', 'meeting', 'trip', 'leave'];
+
+// 记录状态文案。员工端只按状态置灰，管理端要看清「这条现在处于什么阶段」。
+const REC_STATE_TEXT = { future: '未开始', active: '进行中', ended: '已结束' };
+
+// 管理端记录列表的渲染结构。
+// startDate/startTime/endDate/endTime 是云函数一起下发的结构化字段——
+// 「修改」时要回填表单，绝不能去解析 dateText 那种给人看的字符串。
+function shapeRecForAdmin(r) {
+  return {
+    _id: r._id,
+    type: r.type,
+    typeLabel: statusUtil.typeLabel(r.type),
+    note: r.note || '',
+    date: r.date,
+    dateText: r.dateText,
+    state: r.state,
+    stateText: REC_STATE_TEXT[r.state] || '',
+    stateClass: 'rs-' + (r.state || 'ended'),
+    sameDay: r.sameDay,
+    rangeText: r.rangeText,
+    startDate: r.startDate || r.date,
+    startTime: r.startTime || '08:30',
+    endDate: r.endDate || r.date,
+    endTime: r.endTime || '18:00',
+  };
+}
 
 function pad2(n) {
   return n < 10 ? '0' + n : '' + n;
@@ -47,6 +79,38 @@ Page({
     readyPath: '',
     readyName: '',
     readyText: '',
+
+    // 记录管理（管理员纠错）。员工端「只能填今天及以后 + 交叉拒绝 + 已结束不可改」
+    // 那套规则必须配这个出口，否则漏填和填错都没有纠正途径。
+    recDept: '',
+    recKeyword: '',
+    recStaff: [],
+    recTargetId: '',
+    recTargetName: '',
+    recList: [],
+    recLoading: false,
+    // 代填 / 修改表单
+    recFormOpen: false,
+    recFormTitle: '',
+    recReplaceId: '',
+    recTypes: [],
+    recType: 'meeting',
+    recStartDate: '',
+    recStartDateText: '',
+    recStartTime: '08:30',
+    recEndDate: '',
+    recEndDateText: '',
+    recEndTime: '18:00',
+    recDateMin: '',
+    recDateMax: '',
+    recNote: '',
+    recNoteTitle: '',
+    recNotePlaceholder: '',
+    recLeaveReasons: [],
+    recForce: false,
+    recForceText: '关闭',
+    recSubmitting: false,
+    recSubmitText: '保存',
   },
 
   onLoad() {
@@ -63,6 +127,7 @@ Page({
       });
       this.loadList();
       this.initExport();
+      this.initRecords();
     });
   },
 
@@ -280,7 +345,10 @@ Page({
   },
 
   onTabChange(e) {
-    this.setData({ tab: e.currentTarget.dataset.tab });
+    const tab = e.currentTarget.dataset.tab;
+    this.setData({ tab });
+    // 「记录管理」的人员列表复用名册数据，切过去时按它自己的筛选条件重算一次
+    if (tab === 'records') this.recApplyFilter();
   },
 
   async loadList() {
@@ -340,6 +408,8 @@ Page({
       );
     });
     this.setData({ filtered });
+    // 名册变了，「记录管理」的人员列表也跟着变（两边共用同一份 list）
+    this.recApplyFilter();
   },
 
   onDeptFilter(e) {
@@ -669,6 +739,326 @@ Page({
       wx.showToast({ title: '清理失败', icon: 'none' });
     } finally {
       wx.hideLoading();
+    }
+  },
+
+  // ===== 记录管理（管理员纠错）=====
+  //
+  // 员工端的规则是「只能填今天及以后 + 与已有记录交叉就拒绝 + 已结束的不能改」，
+  // 这套规则把「事后改数据」的口子堵上了，代价是漏填、填错日期这类情况
+  // 员工自己完全无解——所以必须配一个管理员出口，不是可选项。
+  // 管理员的每一次改动都会写进 presence_logs。
+
+  initRecords() {
+    const t = dateUtil.today();
+    this.setData({
+      // 标签走 status.js 的 typeLabel，别在这儿另写一份中文
+      recTypes: REC_TYPE_VALUES.map((v) => ({ value: v, label: statusUtil.typeLabel(v) })),
+      recLeaveReasons: noteUtil.LEAVE_REASONS.map((x) => ({ text: x, active: '' })),
+      recStartDate: t,
+      recStartDateText: dateUtil.dayLabel(t),
+      recEndDate: t,
+      recEndDateText: dateUtil.dayLabel(t),
+      // 管理员可以补过去：往前一年足够覆盖补漏；往后仍限 30 天，与员工端一致
+      recDateMin: dateUtil.addDays(t, -365),
+      recDateMax: dateUtil.addDays(t, 30),
+    });
+    this.syncRecNoteMeta();
+  },
+
+  // 记录管理的人员列表：只列已认领的人（记录挂在 openid 上，未认领的人不可能有记录）
+  recApplyFilter() {
+    const { list, recDept, recKeyword } = this.data;
+    const kw = String(recKeyword || '').trim().toLowerCase();
+    const recStaff = (list || []).filter((x) => {
+      if (!x.claimed) return false;
+      if (recDept && x.dept !== recDept) return false;
+      if (!kw) return true;
+      return (
+        (x.name || '').indexOf(kw) >= 0 ||
+        (x.dept || '').indexOf(kw) >= 0 ||
+        (x.jobNo || '').toLowerCase().indexOf(kw) >= 0
+      );
+    });
+    this.setData({ recStaff });
+  },
+
+  onRecDept(e) {
+    this.setData({ recDept: e.currentTarget.dataset.dept || '' });
+    this.recApplyFilter();
+  },
+
+  onRecKeyword(e) {
+    this.setData({ recKeyword: e.detail.value });
+    this.recApplyFilter();
+  },
+
+  async pickRecStaff(e) {
+    const { id, name } = e.currentTarget.dataset;
+    if (!id || id === this.data.recTargetId) return;
+    // 换人要把表单收掉：表单是绑在「当前选中的人」上的，
+    // 留着会让人以为还能把上一个没提交的内容存到新选的人名下
+    this.setData({
+      recTargetId: id,
+      recTargetName: name || '',
+      recList: [],
+      recFormOpen: false,
+      recReplaceId: '',
+    });
+    await this.loadRecRecords();
+  },
+
+  async loadRecRecords() {
+    const staffId = this.data.recTargetId;
+    if (!staffId) return;
+    this.setData({ recLoading: true });
+    try {
+      const { result } = await wx.cloud.callFunction({
+        name: 'presence',
+        data: { action: 'adminRecords', staffId },
+      });
+      if (!result || !result.success) {
+        wx.showToast({ title: (result && result.message) || '加载失败', icon: 'none' });
+        this.setData({ recLoading: false });
+        return;
+      }
+      this.setData({
+        recList: (result.list || []).map(shapeRecForAdmin),
+        recLoading: false,
+      });
+    } catch (err) {
+      console.error('加载员工记录失败', err);
+      this.setData({ recLoading: false });
+      wx.showToast({ title: '加载失败', icon: 'none' });
+    }
+  },
+
+  // 打开表单：带 index 是「改这条」，不带是「代填一条」
+  openRecForm(e) {
+    const ds = (e && e.currentTarget && e.currentTarget.dataset) || {};
+    const idx = ds.index;
+
+    if (idx === undefined || idx === '' || idx === null) {
+      const t = dateUtil.today();
+      this.setData({
+        recFormOpen: true,
+        recFormTitle: '代填一条记录',
+        recReplaceId: '',
+        recType: 'meeting',
+        recStartDate: t,
+        recStartDateText: dateUtil.dayLabel(t),
+        recStartTime: '08:30',
+        recEndDate: t,
+        recEndDateText: dateUtil.dayLabel(t),
+        recEndTime: '18:00',
+        recNote: '',
+        recLeaveReasons: noteUtil.LEAVE_REASONS.map((x) => ({ text: x, active: '' })),
+        recForce: false,
+        recForceText: '关闭',
+        recSubmitText: '保存',
+      });
+      this.syncRecNoteMeta();
+      return;
+    }
+
+    const item = this.data.recList[Number(idx)];
+    if (!item) return;
+    this.setData({
+      recFormOpen: true,
+      recFormTitle: '修改记录',
+      recReplaceId: item._id,
+      recType: item.type,
+      recStartDate: item.startDate,
+      recStartDateText: dateUtil.dayLabel(item.startDate),
+      recStartTime: item.startTime,
+      recEndDate: item.endDate,
+      recEndDateText: dateUtil.dayLabel(item.endDate),
+      recEndTime: item.endTime,
+      recNote: item.note || '',
+      recLeaveReasons: noteUtil.LEAVE_REASONS.map((x) => ({
+        text: x,
+        active: x === item.note ? 'on' : '',
+      })),
+      recForce: false,
+      recForceText: '关闭',
+      recSubmitText: '保存修改',
+    });
+    this.syncRecNoteMeta();
+  },
+
+  closeRecForm() {
+    this.setData({ recFormOpen: false, recReplaceId: '' });
+  },
+
+  // 备注标题随类型走：出差=出差地（自由填写），请假=请假事由（只能点选）
+  syncRecNoteMeta() {
+    const meta = noteUtil.noteMeta(this.data.recType);
+    this.setData({ recNoteTitle: meta.title, recNotePlaceholder: meta.placeholder });
+  },
+
+  onRecType(e) {
+    // 换类型必须清空备注：出差地留着会变成非法的请假事由，
+    // 事由留着会变成出差地，两边都不可信。
+    this.setData({
+      recType: e.currentTarget.dataset.value,
+      recNote: '',
+      recLeaveReasons: noteUtil.LEAVE_REASONS.map((x) => ({ text: x, active: '' })),
+    });
+    this.syncRecNoteMeta();
+  },
+
+  onRecStartDate(e) {
+    const v = e.detail.value;
+    this.setData({ recStartDate: v, recStartDateText: dateUtil.dayLabel(v) });
+  },
+
+  onRecStartTime(e) {
+    this.setData({ recStartTime: e.detail.value });
+  },
+
+  onRecEndDate(e) {
+    const v = e.detail.value;
+    this.setData({ recEndDate: v, recEndDateText: dateUtil.dayLabel(v) });
+  },
+
+  onRecEndTime(e) {
+    this.setData({ recEndTime: e.detail.value });
+  },
+
+  onRecNote(e) {
+    this.setData({ recNote: e.detail.value });
+  },
+
+  // 点事由即选中，再点一次取消（与填写页同一套交互）
+  onRecReason(e) {
+    const text = e.currentTarget.dataset.text;
+    const note = this.data.recNote === text ? '' : text;
+    this.setData({
+      recNote: note,
+      recLeaveReasons: noteUtil.LEAVE_REASONS.map((x) => ({
+        text: x,
+        active: x === note ? 'on' : '',
+      })),
+    });
+  },
+
+  toggleRecForce() {
+    const v = !this.data.recForce;
+    this.setData({ recForce: v, recForceText: v ? '开启' : '关闭' });
+  },
+
+  async submitRecForm() {
+    if (this.data.recSubmitting) return;
+    const d = this.data;
+    if (!d.recTargetId) {
+      wx.showToast({ title: '请先选择人员', icon: 'none' });
+      return;
+    }
+
+    const note = (d.recNote || '').trim();
+    // 与员工端同一套口径（note.js 的 isValidNote）：出差非空、请假必须是 7 项之一。
+    // 管理员也不放宽——否则导出的统计里会混进「年假」这种同义不同字。
+    if (!noteUtil.isValidNote(d.recType, note)) {
+      wx.showToast({
+        title: d.recType === 'leave' ? '请选择请假事由' : '请填写出差地',
+        icon: 'none',
+      });
+      return;
+    }
+
+    this.setData({ recSubmitting: true, recSubmitText: '保存中' });
+    try {
+      const { result } = await wx.cloud.callFunction({
+        name: 'presence',
+        data: {
+          action: 'adminSave',
+          staffId: d.recTargetId,
+          replaceId: d.recReplaceId || '',
+          force: d.recForce,
+          type: d.recType,
+          startDate: d.recStartDate,
+          startTime: d.recStartTime,
+          endDate: d.recEndDate,
+          endTime: d.recEndTime,
+          note,
+        },
+      });
+      if (result && result.success) {
+        wx.showToast({ title: '已保存', icon: 'success' });
+        this.setData({
+          recList: (result.list || []).map(shapeRecForAdmin),
+          recFormOpen: false,
+          recReplaceId: '',
+        });
+        return;
+      }
+      wx.showModal({
+        title: '保存失败',
+        content: (result && result.message) || '请稍后重试',
+        showCancel: false,
+        confirmText: '知道了',
+      });
+    } catch (err) {
+      console.error('保存记录失败', err);
+      wx.showModal({
+        title: '保存失败',
+        content: (err && err.errMsg) || '请稍后重试',
+        showCancel: false,
+        confirmText: '知道了',
+      });
+    } finally {
+      this.setData({
+        recSubmitting: false,
+        recSubmitText: this.data.recReplaceId ? '保存修改' : '保存',
+      });
+    }
+  },
+
+  async recDelete(e) {
+    const item = this.data.recList[Number(e.currentTarget.dataset.index)];
+    if (!item) return;
+
+    const res = await new Promise((resolve) => {
+      wx.showModal({
+        title: '删除记录',
+        content:
+          '将删除 ' + (this.data.recTargetName || '该员工') + ' 的这条记录（' +
+          item.dateText + '），并写入操作日志。确定吗？',
+        confirmText: '删除',
+        confirmColor: '#e34d59',
+        success: resolve,
+        fail: () => resolve({ confirm: false }),
+      });
+    });
+    if (!res.confirm) return;
+
+    wx.showLoading({ title: '删除中' });
+    try {
+      const { result } = await wx.cloud.callFunction({
+        name: 'presence',
+        data: { action: 'adminRemove', id: item._id },
+      });
+      wx.hideLoading();
+      if (result && result.success) {
+        wx.showToast({ title: '已删除', icon: 'success' });
+        this.setData({ recList: (result.list || []).map(shapeRecForAdmin) });
+        return;
+      }
+      wx.showModal({
+        title: '删除失败',
+        content: (result && result.message) || '请稍后重试',
+        showCancel: false,
+        confirmText: '知道了',
+      });
+    } catch (err) {
+      wx.hideLoading();
+      console.error('删除记录失败', err);
+      wx.showModal({
+        title: '删除失败',
+        content: (err && err.errMsg) || '请稍后重试',
+        showCancel: false,
+        confirmText: '知道了',
+      });
     }
   },
 });

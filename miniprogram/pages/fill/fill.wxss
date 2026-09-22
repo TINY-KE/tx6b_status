@@ -480,8 +480,58 @@
   margin-top: 4rpx;
 }
 
+/* 操作区：竖排，「提前终止」在上、「删除」在下。
+   横排会把姓名/备注那栏挤窄，而且这两个动作语义完全不同——终止是把结束时间
+   收回来（已发生的部分保留），删除是整条抹掉。竖排放着，不容易点错。
+   左边距统一由这里给，里面的两个文字不再各自加。 */
+.rec-ops {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12rpx;
+  padding-left: 24rpx;
+  flex-shrink: 0;
+}
+
+.rec-stop {
+  font-size: 28rpx;
+  color: #185fa5;
+}
+
 .rec-del {
   font-size: 28rpx;
   color: #e34d59;
+}
+
+/* 已开始超过 5 小时：按钮仍留着但压成灰色，点了会弹窗说明原因。
+   比直接隐藏好——用户找得到「删除」，只是知道现在不能删、该用哪个。 */
+.rec-del-off {
+  color: #c5c5ca;
+}
+
+/* 已结束：整行置灰，右侧只留一个「已结束」标签。
+   标签底色要一起压掉——.tag-* 是彩色底，只改文字颜色会很突兀
+   （.rec-ended .rec-tag 的优先级高于 .tag-trip，能覆盖）。 */
+.rec-ended .rec-tag {
+  background: #f2f2f4;
+  color: #9a9aa0;
+}
+
+.rec-ended .rec-date,
+.rec-ended .rec-note {
+  color: #b0b0b6;
+}
+
+.rec-ended-tag {
+  font-size: 26rpx;
+  color: #b0b0b6;
   padding-left: 24rpx;
+  flex-shrink: 0;
+}
+
+.rec-hint {
+  margin-top: 16rpx;
+  font-size: 26rpx;
+  color: #9a9aa0;
+  line-height: 1.5;
 }
